@@ -1,0 +1,28 @@
+[package]
+name = "opentypeless"
+version = "0.1.0"
+edition = "2021"
+description = "Local macOS dictation. Record, then transcribe and polish through Vercel AI Gateway."
+publish = false
+
+[dependencies]
+anyhow = "1"
+arboard = "3"
+base64 = "0.22"
+cpal = "0.15"
+dirs = "6"
+gpui-kit = "0.8"
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-foundation = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tray-icon = "0.21"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = "s"
