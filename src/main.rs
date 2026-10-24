@@ -9,6 +9,7 @@ mod polish;
 mod secrets;
 mod session;
 mod store;
+mod ui;
 
 use std::time::Duration;
 
@@ -98,6 +99,7 @@ fn open_settings(cx: &mut App, session: gpui_kit::Entity<Session>) -> AnyWindowH
         cx.new(|cx| SettingsView::new(session.clone(), key_input, phrase_input, cx))
     })
     .expect("设置窗口没有打开");
+    overlay::prepare_settings_window();
     window
 }
 
@@ -129,7 +131,7 @@ fn reveal_settings(
 }
 
 fn settings_options(cx: &mut App) -> WindowOptions {
-    let bounds = Bounds::centered(None, size(px(440.0), px(680.0)), cx);
+    let bounds = Bounds::centered(None, size(px(520.0), px(640.0)), cx);
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {
@@ -139,21 +141,25 @@ fn settings_options(cx: &mut App) -> WindowOptions {
         focus: true,
         show: true,
         is_resizable: true,
-        window_min_size: Some(size(px(380.0), px(520.0))),
+        window_min_size: Some(size(px(480.0), px(560.0))),
         ..Default::default()
     }
 }
 
 fn voice_options(cx: &App) -> WindowOptions {
-    let width = px(360.0);
-    let height = px(72.0);
+    // The window is bigger than the pill: the pill sizes itself to its content
+    // and stays centred at the bottom, so switching states never resizes the
+    // window itself.
+    let width = px(520.0);
+    let height = px(120.0);
     let origin = cx
         .primary_display()
         .map(|display| {
-            let bounds = display.bounds();
+            // visible_bounds already excludes the menu bar and the Dock.
+            let bounds = display.visible_bounds();
             point(
                 bounds.origin.x + (bounds.size.width - width) / 2.0,
-                bounds.origin.y + bounds.size.height - height - px(72.0),
+                bounds.origin.y + bounds.size.height - height - px(16.0),
             )
         })
         .unwrap_or_else(|| point(px(200.0), px(200.0)));
@@ -194,7 +200,6 @@ fn install_tray() -> Option<tray_icon::TrayIcon> {
         .with_menu(Box::new(menu))
         .with_icon(status_icon()?)
         .with_icon_as_template(true)
-        .with_title("OT")
         .with_tooltip("OpenTypeless")
         .build()
         .ok()

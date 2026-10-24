@@ -7,7 +7,9 @@ use cpal::Stream;
 
 use crate::audio::{self, Recorded};
 
-pub const WAVE_BARS: usize = 24;
+/// Ten samples, mirrored across the centre when drawn, so the HUD shows a
+/// symmetric waveform rather than a bar chart.
+pub const WAVE_BARS: usize = 10;
 
 static LEVEL: AtomicU32 = AtomicU32::new(0);
 static WAVE: Mutex<[f32; WAVE_BARS]> = Mutex::new([0.0; WAVE_BARS]);
@@ -124,7 +126,10 @@ fn push_wave(samples: &[f32]) {
     }
     if let Ok(mut bars) = WAVE.lock() {
         for (bar, sample) in bars.iter_mut().zip(next) {
-            *bar = (*bar * 0.35) + (sample * 0.65);
+            // Fast attack, slow release: the envelope follows speech without
+            // flickering on every audio buffer.
+            let coefficient = if sample > *bar { 0.55 } else { 0.10 };
+            *bar += (sample - *bar) * coefficient;
         }
     }
 }

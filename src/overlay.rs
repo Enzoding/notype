@@ -2,6 +2,16 @@ use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSWindow, NSWindowButton, NSWindowTitleVisibility};
 
 const VOICE_TITLE: &str = "OpenTypeless Voice";
+const SETTINGS_TITLE: &str = "OpenTypeless";
+
+/// Keeps the standard traffic lights but drops the duplicated title text, so
+/// the window's own header can carry the name.
+pub fn prepare_settings_window() {
+    with_window(SETTINGS_TITLE, |window| {
+        window.setTitlebarAppearsTransparent(true);
+        window.setTitleVisibility(NSWindowTitleVisibility::Hidden);
+    });
+}
 
 pub fn prepare_voice_window() {
     with_voice_window(|window| {
@@ -37,12 +47,16 @@ fn quiet_panel(window: &NSWindow) {
 }
 
 fn with_voice_window(apply: impl Fn(&NSWindow)) {
+    with_window(VOICE_TITLE, apply);
+}
+
+fn with_window(title: &str, apply: impl Fn(&NSWindow)) {
     let Some(marker) = MainThreadMarker::new() else {
         return;
     };
     let app = NSApplication::sharedApplication(marker);
     for window in app.windows() {
-        if window.title().to_string() == VOICE_TITLE {
+        if window.title().to_string() == title {
             apply(&window);
         }
     }
