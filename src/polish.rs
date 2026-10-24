@@ -38,29 +38,46 @@ pub fn messages(transcript: &str, bundle_id: &str, phrases: &[String]) -> (Strin
     let mode = mode_for_bundle(bundle_id);
     let mode_rule = match mode {
         PolishMode::Literal => {
-            "当前应用是代码或终端。去掉口水词和重复，补上标点，套用词库。不要把代码改写成说明。"
+            "The frontmost app is a code editor or terminal. Remove fillers and repeats, add punctuation, and apply the glossary. Do not rewrite code, commands, identifiers, or paths into prose."
         }
         PolishMode::Email => {
-            "整理成可以直接发送的邮件正文。删掉口水词，把要求或事项写成短列表。不要写主题行，除非用户把主题说出来了。"
+            "Turn this into an email body that can be sent as-is. Remove fillers. When there are requests or action items, use a short list. Do not add a subject line unless the speaker stated one."
         }
-        PolishMode::Chat => "整理成短消息。删掉口水词和重复，保留原来的语气，一句话能说清就不要铺开。",
+        PolishMode::Chat => {
+            "Turn this into a short message. Remove fillers and repeats. Keep the speaker's tone. Stay in one or two sentences when that is enough."
+        }
         PolishMode::Prose => {
-            "把口语收成可以直接阅读的正文，不要原样保留口述。删掉口水词、重复和没说完的半句。按意思分段；出现步骤、对比或几个要求时写成列表。"
+            "Turn spoken words into text people can read. Do not leave the transcript verbatim. Remove fillers, repeats, and unfinished fragments. Split into paragraphs by meaning. When the speaker gives steps, a comparison, or several requests, use a list."
         },
     };
     let glossary = if phrases.is_empty() {
-        "没有额外词库。".to_string()
+        "No extra glossary.".to_string()
     } else {
-        format!("这些写法必须原样保留：{}", phrases.join("、"))
+        let lines = phrases
+            .iter()
+            .map(|phrase| format!("- {phrase}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("Keep these spellings exactly:\n{lines}")
     };
     let system = format!(
-        "你在把语音转写整理成正文。只输出 JSON：{{\"text\":\"整理后的正文\"}}。\
-不要前言，不要代码块。\
-删掉嗯、啊、呃、那个、就是、然后、you know 这类口水词，以及来回重复。\
-用户中途改口时，只保留改口后的意思。\
-可以调整语序，让句子完整、层次清楚，但不要添加用户没说的事实、日期、人名或链接。\
-保持用户原来的语言，中英混说就保持中英混说，不要整段翻译。\
-{mode_rule}\
+        "You edit a speech transcript into text the speaker can send or keep. \
+Reply with JSON only: {{\"text\":\"...\"}}. \
+No preamble, no markdown, and no code fence. The JSON string is the finished text.\n\
+Language: write in the language of the transcript. \
+If the speaker mixed languages, keep that mix. \
+Do not translate unless the speaker explicitly asked for a translation. \
+Use the punctuation, capitalization, and list style of the transcript's language. \
+The text value must stay in that language even though these instructions are in English.\n\
+Cleanup: remove fillers and hesitation in whatever language was spoken, \
+such as um, uh, like, you know, I mean, 嗯, 啊, 呃, 那个, 就是, 然后, euh, ähm, este, えーと. \
+Remove repeats, false starts, and unfinished fragments. \
+If the speaker corrects themselves, keep only the corrected meaning. \
+You may reorder words so the result is complete and easy to scan. \
+Do not add facts, dates, names, numbers, links, or opinions the speaker did not say. \
+Keep names, code, URLs, and glossary spellings exactly. \
+Do not convert currencies, units, calendars, or number formats.\n\
+{mode_rule}\n\
 {glossary}"
     );
     (system, transcript.to_string())
@@ -99,14 +116,17 @@ mod tests {
     #[test]
     fn prose_asks_for_structure() {
         let (system, _) = messages("嗯，我想做三件事", "com.apple.Notes", &[]);
-        assert!(system.contains("口水词"));
-        assert!(system.contains("列表"));
+        assert!(system.contains("fillers"));
+        assert!(system.contains("use a list"));
+        assert!(system.contains("language of the transcript"));
+        assert!(system.contains("Do not translate"));
     }
 
     #[test]
     fn literal_mode_mentions_code() {
         let (system, _) = messages("let mut x", "com.microsoft.VSCode", &["OpenTypeless".into()]);
-        assert!(system.contains("代码或终端"));
+        assert!(system.contains("code editor or terminal"));
+        assert!(system.contains("Do not rewrite code"));
         assert!(system.contains("OpenTypeless"));
     }
 
