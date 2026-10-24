@@ -10,6 +10,7 @@ mod secrets;
 mod session;
 mod store;
 mod ui;
+mod views;
 
 use std::time::Duration;
 
@@ -17,7 +18,8 @@ use gpui_kit::{
     ActivationPolicy, AnyWindowHandle, App, AppContext, Bounds, TitlebarOptions, WindowBounds,
     WindowKind, WindowOptions, application, assets, init, open_window, point, px, size,
 };
-use session::{Session, SettingsView};
+use session::Session;
+use views::SettingsView;
 
 fn main() {
     application().with_assets(assets::AllAssets).run(|cx| {
@@ -137,7 +139,7 @@ fn open_settings(cx: &mut App, session: gpui_kit::Entity<Session>) -> AnyWindowH
 fn open_voice_bar(cx: &mut App, session: gpui_kit::Entity<Session>) {
     open_window(voice_options(cx), cx, |window, cx| {
         window.set_window_title("OpenTypeless Voice");
-        cx.new(|cx| session::OverlayView::new(session.clone(), cx))
+        cx.new(|cx| overlay::OverlayView::new(session.clone(), cx))
     })
     .expect("口述小条没有打开");
 }
