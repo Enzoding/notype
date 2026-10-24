@@ -1,10 +1,11 @@
 use std::process::Command;
 
 use gpui_kit::component::input::Input;
+use gpui_kit::component::Sizable;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::IconName;
 use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{Context, FontWeight, IntoElement, ParentElement, Styled, div, px, rems};
+use gpui_kit::{Context, FontWeight, IntoElement, ParentElement, Styled, div, px};
 
 use crate::hotkey::{self, HOTKEY_OPTIONS};
 use crate::secrets;
@@ -12,7 +13,8 @@ use crate::store::{Store, TriggerMode};
 use crate::ui;
 use crate::views::SettingsView;
 use crate::views::components::{
-    button, ellipsize, icon_button, inline_wave_view, key_row, mode_chip, path_row, setting_row,
+    button, choice_row, ellipsize, icon_button, inline_wave_view, key_row, mode_chip, path_row,
+    setting_row,
 };
 
 impl SettingsView {
@@ -75,36 +77,33 @@ impl SettingsView {
         div()
             .flex()
             .flex_col()
-            .gap(px(22.0))
+            .gap(px(32.0))
             // 1. Hotkey & Accessibility Section
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(ui::section_label("快捷键与触发方式", None).text_color(ui::fg2(cx)))
+                    .child(ui::section_label("快捷键", None).text_color(ui::fg2(cx)))
                     .child(
                         ui::card(cx)
                             // Trigger Key Row
                             .child(
                                 setting_row(
-                                    "全局口述快捷键",
-                                    "在任意应用中按下此按键即可唤起口述小条",
+                                    "口述快捷键",
+                                    "在任何应用里按下，开始口述。",
                                     true,
                                     cx,
                                 )
                                 .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(6.0))
-                                        .children(HOTKEY_OPTIONS.iter().map(|(code, label, badge)| {
+                                    choice_row()
+                                        .children(HOTKEY_OPTIONS.iter().map(|(code, label, _badge)| {
                                             let code_val = *code;
                                             let active = hotkey_code == code_val;
                                             let s = session_handle.clone();
                                             mode_chip(
                                                 format!("hk-{code_val}"),
-                                                format!("{label} ({badge})"),
+                                                (*label).to_string(),
                                                 active,
                                                 move |_, cx| {
                                                     s.update(cx, |session, cx| {
@@ -119,16 +118,13 @@ impl SettingsView {
                             // Trigger Mode Row
                             .child(
                                 setting_row(
-                                    "触发手势模式",
-                                    "选择单击切换或按住说话（松开即自动转写贴入）",
+                                    "开始方式",
+                                    "再按一次结束，或松开后转写。",
                                     true,
                                     cx,
                                 )
                                 .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(6.0))
+                                    choice_row()
                                         .children(
                                             [TriggerMode::Toggle, TriggerMode::Hold]
                                                 .into_iter()
@@ -153,8 +149,8 @@ impl SettingsView {
                             // Accessibility Permission Row
                             .child(
                                 setting_row(
-                                    "macOS 辅助功能权限",
-                                    "用于监听全局快捷键及自动执行 ⌘V 贴入前景窗口",
+                                    "辅助功能",
+                                    "识别快捷键，并把文字贴进当前窗口。",
                                     false,
                                     cx,
                                 )
@@ -162,12 +158,12 @@ impl SettingsView {
                                     div()
                                         .flex()
                                         .items_center()
-                                        .gap(px(8.0))
+                                        .gap(px(12.0))
                                         .child(ui::pill(
                                             if ax_trusted {
-                                                "已授权并生效"
+                                                "已授权"
                                             } else {
-                                                "需要授权"
+                                                "未授权"
                                             },
                                             if ax_trusted {
                                                 ui::ok(cx)
@@ -182,7 +178,7 @@ impl SettingsView {
                                         ))
                                         .child(button(
                                             "open-ax-settings",
-                                            "系统设置",
+                                            "打开辅助功能",
                                             false,
                                             |_, _| {
                                                 let _ = Command::new("open")
@@ -200,23 +196,19 @@ impl SettingsView {
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(ui::section_label("麦克风与音频反馈", None).text_color(ui::fg2(cx)))
+                    .child(ui::section_label("麦克风", None).text_color(ui::fg2(cx)))
                     .child(
                         ui::card(cx)
                             // Microphone device selector
                             .child(
                                 setting_row(
-                                    "音频输入设备",
-                                    &format!("当前默认设备：{}", crate::capture::default_device_name()),
+                                    "麦克风",
+                                    "选择口述时用的输入设备。",
                                     true,
                                     cx,
                                 )
                                 .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .flex_wrap()
-                                        .gap(px(6.0))
+                                    choice_row()
                                         .child({
                                             let s = session_handle.clone();
                                             mode_chip(
@@ -268,8 +260,8 @@ impl SettingsView {
                             // Live Microphone Test Row
                             .child(
                                 setting_row(
-                                    "实时电平测试",
-                                    "开启后对着麦克风说话，检查收音波纹是否灵敏",
+                                    "试音",
+                                    "对着麦克风说话，确认波形有反应。",
                                     true,
                                     cx,
                                 )
@@ -278,7 +270,7 @@ impl SettingsView {
                                         .flex()
                                         .items_center()
                                         .gap(px(12.0))
-                                        .when(mic_testing, |row| row.child(inline_wave_view(wave, cx)))
+                                        .when(mic_testing, |row| row.child(inline_wave_view(wave, ui::live(cx))))
                                         .child({
                                             let s = session_handle.clone();
                                             button(
@@ -297,8 +289,8 @@ impl SettingsView {
                             // Sound cues switch
                             .child(
                                 setting_row(
-                                    "状态提示音效",
-                                    "开始录音、结束录音与贴入完成时播放轻柔的 macOS 原生提示音",
+                                    "播放提示音",
+                                    "开始、结束和贴入完成时播放一声提示。",
                                     true,
                                     cx,
                                 )
@@ -306,7 +298,7 @@ impl SettingsView {
                                     let s = session_handle.clone();
                                     Switch::new("switch-sound-cue")
                                         .checked(sound_feedback)
-                                        .accessibility_label("状态提示音效")
+                                        .accessibility_label("播放提示音")
                                         .on_change(move |checked, _, cx| {
                                             let val = *checked;
                                             s.update(cx, |session, cx| {
@@ -318,8 +310,8 @@ impl SettingsView {
                             // Save audio files switch
                             .child(
                                 setting_row(
-                                    "保留本地录音文件",
-                                    "将每次口述保存为 16kHz WAV 文件，支持在「口述历史」中随时回放",
+                                    "保存录音",
+                                    "保存每次口述，之后可在口述历史里回放。",
                                     false,
                                     cx,
                                 )
@@ -327,7 +319,7 @@ impl SettingsView {
                                     let s = session_handle.clone();
                                     Switch::new("switch-save-audio")
                                         .checked(save_audio)
-                                        .accessibility_label("保留本地录音文件")
+                                        .accessibility_label("保存录音")
                                         .on_change(move |checked, _, cx| {
                                             let val = *checked;
                                             s.update(cx, |session, cx| {
@@ -344,31 +336,27 @@ impl SettingsView {
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(ui::section_label("润色策略与文风偏好", None).text_color(ui::fg2(cx)))
+                    .child(ui::section_label("润色", None).text_color(ui::fg2(cx)))
                     .child(
                         ui::card(cx)
                             // Strategy selector
                             .child(
                                 setting_row(
-                                    "默认润色策略",
-                                    "默认根据最前面的应用（如 VS Code、邮件、微信、备忘录）自动切换模式",
+                                    "润色方式",
+                                    "自动会按当前应用选择，也可以固定成一种。",
                                     true,
                                     cx,
                                 )
                                 .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .flex_wrap()
-                                        .gap(px(6.0))
+                                    choice_row()
                                         .children(
                                             [
-                                                ("auto", "智能识别应用"),
-                                                ("prose", "流畅正文"),
-                                                ("literal", "代码终端"),
-                                                ("email", "商务邮件"),
-                                                ("chat", "即时通讯"),
-                                                ("raw", "仅转写不润色"),
+                                                ("auto", "自动"),
+                                                ("prose", "正文"),
+                                                ("literal", "代码"),
+                                                ("email", "邮件"),
+                                                ("chat", "聊天"),
+                                                ("raw", "只转写"),
                                             ]
                                             .into_iter()
                                             .map(|(code, label)| {
@@ -392,8 +380,8 @@ impl SettingsView {
                             // CJK spacing switch
                             .child(
                                 setting_row(
-                                    "中英文与数字自动留白",
-                                    "在中文与英文单词、数字之间自动插入半角空格（如「使用 Rust 开发」）",
+                                    "中英文之间加空格",
+                                    "打开后，中文和英文、数字之间会空一格，例如「使用 Rust 开发」。",
                                     true,
                                     cx,
                                 )
@@ -401,7 +389,7 @@ impl SettingsView {
                                     let s = session_handle.clone();
                                     Switch::new("switch-space-cjk")
                                         .checked(space_cjk)
-                                        .accessibility_label("中英文与数字自动留白")
+                                        .accessibility_label("中英文之间加空格")
                                         .on_change(move |checked, _, cx| {
                                             let val = *checked;
                                             s.update(cx, |session, cx| {
@@ -415,28 +403,31 @@ impl SettingsView {
                                 div()
                                     .flex()
                                     .flex_col()
-                                    .gap(px(8.0))
-                                    .px(px(14.0))
-                                    .py(px(12.0))
+                                    .gap(px(12.0))
+                                    .px(px(16.0))
+                                    .py(px(14.0))
                                     .child(
                                         div()
                                             .flex()
                                             .items_center()
                                             .justify_between()
+                                            .gap(px(12.0))
                                             .child(
                                                 div()
-                                                    .text_size(rems(0.8125))
+                                                    .text_size(px(14.0))
                                                     .font_weight(FontWeight::MEDIUM)
-                                                    .child("自定义润色指令"),
+                                                    .child("补充要求"),
                                             )
                                             .child(
                                                 div()
-                                                    .text_size(rems(0.6875))
-                                                    .text_color(ui::fg3(cx))
+                                                    .flex_1()
+                                                    .min_w(px(0.0))
+                                                    .text_size(px(13.0))
+                                                    .text_color(ui::fg2(cx))
                                                     .child(if custom_prompt.is_empty() {
-                                                        "当前使用系统默认指令".to_string()
+                                                        "留空则使用默认润色。".to_string()
                                                     } else {
-                                                        format!("已生效：{}", ellipsize(&custom_prompt, 26))
+                                                        format!("正在使用：{}", ellipsize(&custom_prompt, 26))
                                                     }),
                                             ),
                                     )
@@ -444,19 +435,19 @@ impl SettingsView {
                                         div()
                                             .flex()
                                             .items_center()
-                                            .gap(px(8.0))
+                                            .gap(px(12.0))
                                             .child(
                                                 div()
                                                     .flex_1()
                                                     .min_w(px(0.0))
-                                                    .child(Input::new(&custom_prompt_input).w_full()),
+                                                    .child(Input::new(&custom_prompt_input).large().w_full()),
                                             )
                                             .child({
                                                 let s = session_handle.clone();
                                                 let inp = custom_prompt_input.clone();
                                                 button(
                                                     "save-custom-prompt",
-                                                    "应用指令",
+                                                    "保存要求",
                                                     false,
                                                     move |_, cx| {
                                                         let val = inp.read(cx).value().to_string();
@@ -472,19 +463,19 @@ impl SettingsView {
                                             .flex()
                                             .items_center()
                                             .flex_wrap()
-                                            .gap(px(6.0))
+                                            .gap(px(8.0))
                                             .child(
                                                 div()
-                                                    .text_size(rems(0.6875))
-                                                    .text_color(ui::fg3(cx))
-                                                    .child("快捷风格："),
+                                                    .text_size(px(13.0))
+                                                    .text_color(ui::fg2(cx))
+                                                    .child("示例"),
                                             )
                                             .children(
                                                 [
-                                                    ("默认纯净", ""),
-                                                    ("精炼简短", "尽量精炼简短，删去客套话，直奔主题。"),
-                                                    ("书面专业", "使用克制、专业的书面表达，适合技术文档与正式汇报。"),
-                                                    ("结构化要点", "遇到多项内容时，优先使用清晰的要点列表（- ）排版。"),
+                                                    ("默认", ""),
+                                                    ("精炼", "尽量精炼简短，删去客套话，直奔主题。"),
+                                                    ("书面", "使用克制、专业的书面表达，适合技术文档与正式汇报。"),
+                                                    ("分点", "遇到多项内容时，优先使用清晰的要点列表（- ）排版。"),
                                                 ]
                                                 .into_iter()
                                                 .enumerate()
@@ -518,7 +509,7 @@ impl SettingsView {
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(ui::section_label("Vercel AI Gateway 连接", None).text_color(ui::fg2(cx)))
+                    .child(ui::section_label("连接", None).text_color(ui::fg2(cx)))
                     .child(
                         ui::card(cx)
                             .child(key_row(
@@ -538,8 +529,8 @@ impl SettingsView {
                             ))
                             .child(
                                 setting_row(
-                                    "处理管线模型",
-                                    &format!("转写：{transcribe_model}  ·  润色：{polish_model}"),
+                                    "模型",
+                                    &format!("转写 {transcribe_model}，润色 {polish_model}"),
                                     false,
                                     cx,
                                 )
@@ -557,13 +548,13 @@ impl SettingsView {
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(ui::section_label("系统与本机存储", None).text_color(ui::fg2(cx)))
+                    .child(ui::section_label("本机", None).text_color(ui::fg2(cx)))
                     .child(
                         ui::card(cx)
                             .child(
                                 setting_row(
-                                    "在 Dock 中显示应用图标",
-                                    "关闭后仅保留顶部菜单栏图标与全局快捷键常驻",
+                                    "在 Dock 中显示",
+                                    "打开后，图标出现在 Dock。菜单栏里的图标仍然在。",
                                     true,
                                     cx,
                                 )
@@ -571,7 +562,7 @@ impl SettingsView {
                                     let s = session_handle.clone();
                                     Switch::new("switch-show-dock")
                                         .checked(show_dock)
-                                        .accessibility_label("在 Dock 中显示应用图标")
+                                        .accessibility_label("在 Dock 中显示")
                                         .on_change(move |checked, _, cx| {
                                             let val = *checked;
                                             s.update(cx, |session, cx| {
@@ -582,7 +573,7 @@ impl SettingsView {
                             )
                             .child(
                                 setting_row(
-                                    "本机数据库与录音目录",
+                                    "数据位置",
                                     &data_dir,
                                     false,
                                     cx,

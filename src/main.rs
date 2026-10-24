@@ -96,6 +96,7 @@ fn open_settings(cx: &mut App, session: gpui_kit::Entity<Session>) -> AnyWindowH
     let initial_prompt = session.read(cx).custom_prompt.clone();
     let (window, _) = open_window(settings_options(cx), cx, move |window, cx| {
         gpui_kit::component::Theme::change(window.appearance(), Some(window), cx);
+        crate::ui::sync_controls(cx);
         let key_input = cx.new(|cx| {
             gpui_kit::component::input::InputState::new(window, cx).placeholder("vck_…")
         });
@@ -137,11 +138,24 @@ fn open_settings(cx: &mut App, session: gpui_kit::Entity<Session>) -> AnyWindowH
 }
 
 fn open_voice_bar(cx: &mut App, session: gpui_kit::Entity<Session>) {
-    open_window(voice_options(cx), cx, |window, cx| {
+    let (window, _) = open_window(voice_options(cx), cx, |window, cx| {
         window.set_window_title("OpenTypeless Voice");
         cx.new(|cx| overlay::OverlayView::new(session.clone(), cx))
     })
     .expect("口述小条没有打开");
+    // The component root paints the theme canvas behind every window. On the
+    // voice bar that canvas is a rectangle around the pill, so clear it.
+    window
+        .update(cx, |root, _, cx| {
+            if let Ok(root) = root.downcast::<gpui_kit::base::Root>() {
+                root.update(cx, |root, cx| {
+                    use gpui_kit::Styled as _;
+                    root.style().background = Some(gpui_kit::transparent_black().into());
+                    cx.notify();
+                });
+            }
+        })
+        .ok();
 }
 
 fn reveal_settings(
@@ -181,8 +195,8 @@ fn settings_options(cx: &mut App) -> WindowOptions {
 }
 
 fn voice_options(cx: &App) -> WindowOptions {
-    let width = px(580.0);
-    let height = px(120.0);
+    let width = px(420.0);
+    let height = px(44.0);
     let origin = cx
         .primary_display()
         .map(|display| {

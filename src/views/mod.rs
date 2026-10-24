@@ -11,10 +11,10 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::Icon;
 use gpui_kit::{
     Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, px, rems, rgb,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, px, rems,
 };
 
-use crate::session::Session;
+use crate::session::{Phase, Session};
 use crate::ui;
 use components::{nav_item, sidebar_status_card, status_pill};
 
@@ -41,7 +41,7 @@ impl NavTab {
             NavTab::Overview => "实时状态、数据概览与内置润色演练台",
             NavTab::History => "查阅、对比原文、回放录音或重新润色历史口述",
             NavTab::Dictionary => "管理专有名词与术语，转写与润色将严格保持拼写",
-            NavTab::Settings => "全局快捷键、麦克风输入、AI Gateway 与文风偏好",
+            NavTab::Settings => "快捷键、麦克风、润色和连接",
         }
     }
 }
@@ -159,7 +159,16 @@ impl Render for SettingsView {
         let view = cx.entity();
         let session_handle = self.session.clone();
 
-        let (phase, elapsed, phrases_len, history_len, has_key, hotkey_code, trigger_mode) = {
+        let (
+            phase,
+            elapsed,
+            phrases_len,
+            history_len,
+            has_key,
+            hotkey_code,
+            trigger_mode,
+            studio_dictating,
+        ) = {
             let s = self.session.read(cx);
             (
                 s.phase.clone(),
@@ -169,7 +178,16 @@ impl Render for SettingsView {
                 s.has_key(),
                 s.hotkey_code,
                 s.trigger_mode,
+                s.studio_dictating,
             )
+        };
+        let shown_phase = if studio_dictating {
+            phase.clone()
+        } else {
+            match &phase {
+                Phase::Listening | Phase::Working(_) => Phase::Idle,
+                other => other.clone(),
+            }
         };
 
         let page_content = match active_tab {
@@ -227,7 +245,7 @@ impl Render for SettingsView {
                                                     .child(
                                                         Icon::new(LucideIcon::AudioWaveform)
                                                             .size(px(15.0))
-                                                            .text_color(rgb(0xffffff)),
+                                                            .text_color(ui::on_accent(cx)),
                                                     ),
                                             )
                                             .child(
@@ -254,7 +272,7 @@ impl Render for SettingsView {
                                 div()
                                     .flex()
                                     .flex_col()
-                                    .gap(px(3.0))
+                                    .gap(px(4.0))
                                     .child(nav_item(
                                         "nav-overview",
                                         LucideIcon::LayoutDashboard,
@@ -308,7 +326,7 @@ impl Render for SettingsView {
                     .child(
                         // Sidebar Footer: Quick Dictation Status & Shortcut Card
                         sidebar_status_card(
-                            &phase,
+                            &shown_phase,
                             elapsed,
                             hotkey_code,
                             trigger_mode,
@@ -341,21 +359,21 @@ impl Render for SettingsView {
                                 div()
                                     .flex()
                                     .flex_col()
-                                    .gap(px(2.0))
+                                    .gap(px(4.0))
                                     .child(
                                         div()
-                                            .text_size(rems(1.1875))
+                                            .text_size(px(18.0))
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .child(active_tab.label()),
                                     )
                                     .child(
                                         div()
-                                            .text_size(rems(0.75))
+                                            .text_size(px(14.0))
                                             .text_color(ui::fg2(cx))
                                             .child(active_tab.subtitle()),
                                     ),
                             )
-                            .child(status_pill(&phase, elapsed, cx)),
+                            .child(status_pill(&shown_phase, elapsed, cx)),
                     )
                     .child(
                         div()

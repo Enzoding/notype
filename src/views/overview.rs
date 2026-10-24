@@ -1,9 +1,10 @@
 use gpui_kit::assets::IconName as LucideIcon;
 use gpui_kit::component::input::Input;
+use gpui_kit::component::Sizable;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    Context, InteractiveElement, IntoElement, ParentElement, SharedString,
+    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, px, rems,
 };
 
@@ -14,7 +15,8 @@ use crate::store::Store;
 use crate::ui;
 use crate::views::SettingsView;
 use crate::views::components::{
-    button, empty_state, hero_banner, history_card_row, metric_card, mode_chip, small_action_pill,
+    button, empty_state, hero_banner, hero_fill, history_card_row, metric_card, metric_fills,
+    mode_chip, small_action_pill,
 };
 
 impl SettingsView {
@@ -76,13 +78,23 @@ impl SettingsView {
             _ => "智能感知前台应用",
         };
 
+        let display_phase = if studio_dictating {
+            phase.clone()
+        } else {
+            match &phase {
+                Phase::Listening | Phase::Working(_) => Phase::Idle,
+                other => other.clone(),
+            }
+        };
+        let fills = metric_fills(hero_fill(&display_phase));
+
         div()
             .flex()
             .flex_col()
-            .gap(px(22.0))
+            .gap(px(32.0))
             // 1. Hero Action & Live Status Card
             .child(hero_banner(
-                &phase,
+                &display_phase,
                 elapsed,
                 wave,
                 has_key,
@@ -97,7 +109,8 @@ impl SettingsView {
             .child(
                 div()
                     .flex()
-                    .gap(px(12.0))
+                    .flex_wrap()
+                    .gap(px(16.0))
                     .child(metric_card(
                         "累计口述",
                         format!("{}", stats.total_sessions),
@@ -107,7 +120,7 @@ impl SettingsView {
                             "随时按键开始口述".into()
                         },
                         LucideIcon::Mic,
-                        ui::accent(cx),
+                        fills[0],
                         cx,
                     ))
                     .child(metric_card(
@@ -119,7 +132,7 @@ impl SettingsView {
                             "自动去除口癖与标点整理".into()
                         },
                         LucideIcon::Sparkles,
-                        ui::ok(cx),
+                        fills[1],
                         cx,
                     ))
                     .child(metric_card(
@@ -131,7 +144,7 @@ impl SettingsView {
                         },
                         "字 / 分钟（含中英混排）".into(),
                         LucideIcon::Gauge,
-                        ui::warn(cx),
+                        fills[2],
                         cx,
                     ))
                     .child(metric_card(
@@ -139,33 +152,41 @@ impl SettingsView {
                         format!("{phrases_len}"),
                         "转写与润色双重拼写锁定".into(),
                         LucideIcon::BookOpen,
-                        ui::accent(cx),
+                        fills[3],
                         cx,
                     )),
             )
             // 3. Built-in Live Studio / Polish Playground (One Live Thing)
             .child(
-                div()
+                ui::feature_surface(ui::FeatureFill::Lavender, cx)
                     .flex()
                     .flex_col()
-                    .gap(px(8.0))
+                    .gap(px(16.0))
+                    .p(px(24.0))
                     .child(
                         div()
                             .flex()
-                            .items_center()
-                            .justify_between()
+                            .flex_col()
+                            .gap(px(8.0))
                             .child(
-                                ui::section_label(
-                                    "润色与试音演练台",
-                                    Some("无需切换窗口，直接测试语音转写或体验不同场景的 AI 润色效果".into()),
-                                )
-                                .text_color(ui::fg2(cx)),
+                                div()
+                                    .text_size(px(24.0))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(ui::FeatureFill::Lavender.ink(cx))
+                                    .child("润色与试音演练台"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(16.0))
+                                    .font_weight(FontWeight::NORMAL)
+                                    .text_color(ui::body(cx))
+                                    .child("无需切换窗口，直接测试语音转写，或试不同场景的润色"),
                             ),
                     )
                     .child(
                         ui::card(cx)
-                            .p(px(16.0))
-                            .gap(px(12.0))
+                            .p(px(24.0))
+                            .gap(px(16.0))
                             // Mode selector & quick sample chips
                             .child(
                                 div()
@@ -178,7 +199,7 @@ impl SettingsView {
                                         div()
                                             .flex()
                                             .items_center()
-                                            .gap(px(6.0))
+                                            .gap(px(12.0))
                                             .child(
                                                 div()
                                                     .text_size(rems(0.71875))
@@ -215,7 +236,7 @@ impl SettingsView {
                                         div()
                                             .flex()
                                             .items_center()
-                                            .gap(px(6.0))
+                                            .gap(px(12.0))
                                             .child(
                                                 div()
                                                     .text_size(rems(0.6875))
@@ -285,7 +306,7 @@ impl SettingsView {
                                         div()
                                             .flex_1()
                                             .min_w(px(0.0))
-                                            .child(Input::new(&studio_input).w_full()),
+                                            .child(Input::new(&studio_input).large().w_full()),
                                     )
                                     .child({
                                         let s = session_handle.clone();

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use gpui_kit::assets::IconName as LucideIcon;
-use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{Icon, IconName, Sizable, Size};
@@ -9,6 +9,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     App, ElementId, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
     ParentElement, SharedString, StatefulInteractiveElement, Styled, Window, div, hsla, px, rems,
+    rgb,
 };
 
 use crate::hotkey;
@@ -41,8 +42,8 @@ pub fn nav_item(
         .flex()
         .items_center()
         .justify_between()
-        .h(px(34.0))
-        .px(px(10.0))
+        .h(px(36.0))
+        .px(px(8.0))
         .rounded(px(8.0))
         .bg(bg)
         .cursor_pointer()
@@ -101,8 +102,8 @@ pub fn sidebar_status_card(
         .flex()
         .flex_col()
         .gap(px(8.0))
-        .p(px(11.0))
-        .rounded(px(10.0))
+        .p(px(12.0))
+        .rounded(px(12.0))
         .bg(ui::card_bg(cx))
         .border_1()
         .border_color(ui::hairline(cx))
@@ -135,9 +136,9 @@ pub fn sidebar_status_card(
                                 .child(if is_rec {
                                     format!("录音中 {}", mmss(elapsed))
                                 } else if has_key {
-                                    "引擎就绪".into()
+                                    "可以口述".into()
                                 } else {
-                                    "等待配置 Key".into()
+                                    "还没有 API Key".into()
                                 }),
                         ),
                 )
@@ -158,9 +159,56 @@ pub fn sidebar_status_card(
             if is_rec { "完成并转写" } else { "立即开始口述" },
             is_rec,
             move |_, cx| {
-                session.update(cx, |s, cx| s.toggle(cx));
+                session.update(cx, |s, cx| {
+                    if !s.studio_dictating
+                        && matches!(s.phase, Phase::Listening | Phase::Working(_))
+                    {
+                        return;
+                    }
+                    s.toggle(cx);
+                });
             },
         ))
+}
+
+pub fn hero_fill(phase: &Phase) -> ui::FeatureFill {
+    match phase {
+        Phase::Listening => ui::FeatureFill::Pink,
+        Phase::Working(_) => ui::FeatureFill::Teal,
+        Phase::Message(Notice::Error(_)) | Phase::Message(Notice::Warn(_)) => ui::FeatureFill::Cream,
+        Phase::Message(_) => ui::FeatureFill::Peach,
+        Phase::Idle => ui::FeatureFill::Cream,
+    }
+}
+
+/// Four metric fills that do not repeat the hero, and leave lavender for the studio card.
+pub fn metric_fills(hero: ui::FeatureFill) -> [ui::FeatureFill; 4] {
+    match hero {
+        ui::FeatureFill::Pink => [
+            ui::FeatureFill::Teal,
+            ui::FeatureFill::Peach,
+            ui::FeatureFill::Ochre,
+            ui::FeatureFill::Cream,
+        ],
+        ui::FeatureFill::Teal => [
+            ui::FeatureFill::Pink,
+            ui::FeatureFill::Peach,
+            ui::FeatureFill::Ochre,
+            ui::FeatureFill::Cream,
+        ],
+        ui::FeatureFill::Peach => [
+            ui::FeatureFill::Pink,
+            ui::FeatureFill::Teal,
+            ui::FeatureFill::Ochre,
+            ui::FeatureFill::Cream,
+        ],
+        _ => [
+            ui::FeatureFill::Pink,
+            ui::FeatureFill::Teal,
+            ui::FeatureFill::Peach,
+            ui::FeatureFill::Ochre,
+        ],
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -176,59 +224,67 @@ pub fn hero_banner(
     view: Entity<SettingsView>,
     cx: &App,
 ) -> impl IntoElement {
-    let card = div()
+    let fill = hero_fill(phase);
+    let ink = fill.ink(cx);
+    let muted = fill.muted(cx);
+    let card = ui::feature_surface(fill, cx)
         .flex()
+        .flex_row()
         .items_center()
         .justify_between()
-        .gap(px(16.0))
-        .p(px(18.0))
-        .rounded(px(12.0))
-        .bg(ui::card_bg(cx))
-        .border_1()
-        .border_color(ui::hairline(cx));
+        .gap(px(24.0))
+        .p(px(24.0));
 
     match phase {
         Phase::Listening => {
             let stop_session = session.clone();
             let cancel_session = session;
-            card.border_color(ui::live(cx))
-                .child(
+            card.child(
                     div()
+                        .flex_1()
+                        .min_w(px(0.0))
                         .flex()
                         .items_center()
-                        .gap(px(14.0))
+                        .gap(px(16.0))
                         .child(
                             div()
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .size(px(38.0))
+                                .size(px(44.0))
                                 .rounded_full()
-                                .bg(ui::live_soft(cx))
-                                .child(div().size(px(10.0)).rounded_full().bg(ui::live(cx))),
+                                .bg(ui::on_primary(cx).opacity(0.22))
+                                .child(
+                                    div().size(px(10.0)).rounded_full().bg(ui::on_primary(cx)),
+                                ),
                         )
                         .child(
                             div()
                                 .flex()
+                                .flex_1()
+                                .min_w(px(0.0))
                                 .flex_col()
-                                .gap(px(3.0))
+                                .gap(px(8.0))
                                 .child(
                                     div()
                                         .flex()
+                                        .flex_wrap()
                                         .items_center()
-                                        .gap(px(10.0))
+                                        .gap(px(12.0))
                                         .child(
                                             div()
-                                                .text_size(rems(0.9375))
-                                                .font_weight(FontWeight::SEMIBOLD)
+                                                .text_size(px(32.0))
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(ink)
                                                 .child(format!("正在聆听 · {}", mmss(elapsed))),
                                         )
-                                        .child(inline_wave_view(wave, cx)),
+                                        .child(inline_wave_view(wave, ui::on_primary(cx))),
                                 )
                                 .child(
                                     div()
-                                        .text_size(rems(0.75))
-                                        .text_color(ui::fg2(cx))
+                                        .text_size(px(16.0))
+                                        .font_weight(FontWeight::NORMAL)
+                                        .text_color(muted)
                                         .child("说完后再次按快捷键或点击右侧「完成」即可转写并贴入目标窗口"),
                                 ),
                         ),
@@ -237,36 +293,43 @@ pub fn hero_banner(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(8.0))
+                        .flex_shrink_0()
+                        .gap(px(12.0))
                         .child(button("hero-cancel", "取消", false, move |_, cx| {
                             cancel_session.update(cx, |s, cx| s.cancel_recording(cx));
                         }))
-                        .child(button("hero-stop", "完成转写", true, move |_, cx| {
+                        .child(button_on_color("hero-stop", "完成转写", cx, move |_, cx| {
                             stop_session.update(cx, |s, cx| s.toggle(cx));
                         })),
                 )
         }
         Phase::Working(stage) => card.child(
             div()
+                .flex_1()
+                .min_w(px(0.0))
                 .flex()
                 .items_center()
-                .gap(px(14.0))
+                .gap(px(16.0))
                 .child(Spinner::new().with_size(Size::Medium))
                 .child(
                     div()
                         .flex()
+                        .flex_1()
+                        .min_w(px(0.0))
                         .flex_col()
-                        .gap(px(3.0))
+                        .gap(px(8.0))
                         .child(
                             div()
-                                .text_size(rems(0.9375))
-                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_size(px(32.0))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(ink)
                                 .child(stage.label()),
                         )
                         .child(
                             div()
-                                .text_size(rems(0.75))
-                                .text_color(ui::fg2(cx))
+                                .text_size(px(16.0))
+                                .font_weight(FontWeight::NORMAL)
+                                .text_color(muted)
                                 .child(format!(
                                     "处理管线第 {} / 3 步 · 完成后自动贴入最前面的窗口",
                                     stage.index() + 1
@@ -280,88 +343,104 @@ pub fn hero_banner(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(12.0))
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .gap(px(16.0))
                     .child(Icon::new(icon).size(px(18.0)).text_color(color))
                     .child(
                         div()
+                            .flex_1()
+                            .min_w(px(0.0))
                             .flex()
                             .flex_col()
-                            .gap(px(2.0))
+                            .gap(px(8.0))
                             .child(
                                 div()
-                                    .text_size(rems(0.9375))
-                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_size(px(32.0))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(ink)
                                     .child(ellipsize(notice.text(), 56)),
                             )
                             .child(
                                 div()
-                                    .text_size(rems(0.75))
-                                    .text_color(ui::fg2(cx))
+                                    .text_size(px(16.0))
+                                    .font_weight(FontWeight::NORMAL)
+                                    .text_color(muted)
                                     .child("内容已同步归档到口述历史"),
                             ),
                     ),
             )
-            .child(button("hero-again", "再次口述", false, move |_, cx| {
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .child(button("hero-again", "再次口述", false, move |_, cx| {
                 session.update(cx, |s, cx| s.toggle(cx));
-            }))
+            })),
+            )
         }
         Phase::Idle => card
             .child(
                 div()
+                    .flex_1()
+                    .min_w(px(0.0))
                     .flex()
-                    .items_center()
-                    .gap(px(14.0))
+                    .items_start()
+                    .gap(px(16.0))
                     .child(
                         div()
                             .flex()
+                            .flex_shrink_0()
                             .items_center()
                             .justify_center()
-                            .h(px(38.0))
-                            .px(px(12.0))
-                            .rounded(px(9.0))
+                            .h(px(32.0))
+                            .px(px(10.0))
+                            .rounded(px(8.0))
                             .bg(ui::well_bg(cx))
-                            .border_1()
-                            .border_color(ui::border_strong(cx))
-                            .text_size(rems(0.875))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(ui::fg(cx))
+                            .text_size(px(14.0))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(ink)
                             .child(hotkey::hotkey_badge(hotkey_code)),
                     )
                     .child(
                         div()
+                            .flex_1()
+                            .min_w(px(0.0))
                             .flex()
                             .flex_col()
-                            .gap(px(4.0))
+                            .gap(px(8.0))
                             .child(
                                 div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(8.0))
-                                    .child(
-                                        div()
-                                            .text_size(rems(0.9375))
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .child("随时随地语音口述"),
-                                    )
-                                    .child(ui::pill(
-                                        strategy_label.to_string(),
-                                        ui::accent(cx),
-                                        ui::accent_soft(cx),
-                                    )),
+                                    .text_size(px(32.0))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(ink)
+                                    .child("随时随地语音口述"),
                             )
                             .child(
                                 div()
-                                    .text_size(rems(0.75))
-                                    .text_color(ui::fg2(cx))
-                                    .child(format!(
-                                        "当前触发方式：{} · {}",
-                                        hotkey::hotkey_label(hotkey_code),
-                                        trigger_mode.label()
-                                    )),
+                                    .flex()
+                                    .flex_wrap()
+                                    .items_center()
+                                    .gap(px(8.0))
+                                    .child(ui::pill(
+                                        strategy_label.to_string(),
+                                        ui::fg(cx),
+                                        ui::well_bg(cx),
+                                    ))
+                                    .child(
+                                        div()
+                                            .text_size(px(16.0))
+                                            .font_weight(FontWeight::NORMAL)
+                                            .text_color(muted)
+                                            .child(format!(
+                                                "当前触发方式：{} · {}",
+                                                hotkey::hotkey_label(hotkey_code),
+                                                trigger_mode.label()
+                                            )),
+                                    ),
                             ),
                     ),
             )
-            .child(if has_key {
+            .child(div().flex_shrink_0().child(if has_key {
                 button("hero-start", "开始口述", true, move |_, cx| {
                     session.update(cx, |s, cx| s.toggle(cx));
                 })
@@ -372,7 +451,7 @@ pub fn hero_banner(
                         cx.notify();
                     });
                 })
-            }),
+            })),
     }
 }
 
@@ -381,21 +460,19 @@ pub fn metric_card(
     value: String,
     subtitle: String,
     icon: LucideIcon,
-    accent_color: Hsla,
+    fill: ui::FeatureFill,
     cx: &App,
 ) -> impl IntoElement {
-    div()
-        .flex_1()
-        .min_w(px(0.0))
+    let ink = fill.ink(cx);
+    let muted = fill.muted(cx);
+    ui::feature_surface(fill, cx)
         .flex()
         .flex_col()
-        .justify_between()
+        .flex_1()
+        .min_w(px(240.0))
         .gap(px(8.0))
-        .p(px(14.0))
-        .rounded(px(12.0))
-        .bg(ui::card_bg(cx))
-        .border_1()
-        .border_color(ui::hairline(cx))
+        .rounded(px(16.0))
+        .p(px(16.0))
         .child(
             div()
                 .flex()
@@ -403,24 +480,25 @@ pub fn metric_card(
                 .justify_between()
                 .child(
                     div()
-                        .text_size(rems(0.71875))
+                        .text_size(px(13.0))
                         .font_weight(FontWeight::MEDIUM)
-                        .text_color(ui::fg2(cx))
+                        .text_color(muted)
                         .child(title),
                 )
-                .child(Icon::new(icon).size(px(14.0)).text_color(accent_color)),
+                .child(Icon::new(icon).size(px(16.0)).text_color(ink)),
         )
         .child(
             div()
-                .text_size(rems(1.375))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(ui::fg(cx))
+                .text_size(px(24.0))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(ink)
                 .child(value),
         )
         .child(
             div()
-                .text_size(rems(0.6875))
-                .text_color(ui::fg3(cx))
+                .text_size(px(14.0))
+                .font_weight(FontWeight::NORMAL)
+                .text_color(muted)
                 .child(subtitle),
         )
 }
@@ -650,35 +728,49 @@ pub fn history_card_row(
 pub fn setting_row(title: &str, subtitle: &str, border_bottom: bool, cx: &App) -> gpui_kit::Div {
     div()
         .flex()
+        .flex_wrap()
         .items_center()
         .justify_between()
         .gap(px(16.0))
-        .px(px(14.0))
-        .py(px(12.0))
+        .px(px(16.0))
+        .py(px(14.0))
         .when(border_bottom, |row| {
             row.border_b_1().border_color(ui::hairline(cx))
         })
         .child(
             div()
-                .flex_1()
-                .min_w(px(0.0))
+                .w(px(220.0))
+                .flex_shrink_0()
                 .flex()
                 .flex_col()
-                .gap(px(2.0))
+                .gap(px(4.0))
                 .child(
                     div()
-                        .text_size(rems(0.8125))
+                        .text_size(px(14.0))
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(ui::fg(cx))
                         .child(title.to_string()),
                 )
                 .child(
                     div()
-                        .text_size(rems(0.71875))
+                        .text_size(px(13.0))
+                        .line_height(rems(1.45))
                         .text_color(ui::fg2(cx))
                         .child(subtitle.to_string()),
                 ),
         )
+}
+
+/// Wrapping cluster for a row of choices. Takes the space left beside the label.
+pub fn choice_row() -> gpui_kit::Div {
+    div()
+        .flex()
+        .flex_1()
+        .min_w(px(0.0))
+        .flex_wrap()
+        .items_center()
+        .justify_start()
+        .gap(px(8.0))
 }
 
 pub fn mode_chip(
@@ -692,13 +784,15 @@ pub fn mode_chip(
         .id(id)
         .flex()
         .items_center()
-        .h(px(26.0))
-        .px(px(10.0))
-        .rounded(px(7.0))
+        .flex_shrink_0()
+        .h(px(32.0))
+        .px(px(12.0))
+        .rounded(px(9999.0))
+        .whitespace_nowrap()
         .bg(if active {
-            ui::accent_soft(cx)
+            ui::accent(cx)
         } else {
-            ui::well_bg(cx)
+            ui::canvas_bg(cx)
         })
         .border_1()
         .border_color(if active {
@@ -714,13 +808,13 @@ pub fn mode_chip(
                 st
             }
         })
-        .text_size(rems(0.75))
-        .font_weight(if active {
-            FontWeight::MEDIUM
+        .text_size(px(14.0))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(if active {
+            ui::on_accent(cx)
         } else {
-            FontWeight::NORMAL
+            ui::fg(cx)
         })
-        .text_color(if active { ui::accent(cx) } else { ui::fg2(cx) })
         .on_click(move |_, window, cx| action(window, cx))
         .child(label.into())
 }
@@ -750,8 +844,7 @@ pub fn small_action_pill(
         .child(label)
 }
 
-pub fn inline_wave_view(wave: [f32; crate::capture::WAVE_BARS], cx: &App) -> gpui_kit::Div {
-    let color = ui::live(cx);
+pub fn inline_wave_view(wave: [f32; crate::capture::WAVE_BARS], color: Hsla) -> gpui_kit::Div {
     div()
         .flex()
         .items_center()
@@ -777,26 +870,25 @@ pub fn status_pill(phase: &Phase, elapsed: Duration, cx: &App) -> impl IntoEleme
     let (color, label) = match phase {
         Phase::Idle => (ui::ok(cx), "就绪".to_string()),
         Phase::Listening => (ui::live(cx), format!("正在听 {}", mmss(elapsed))),
-        Phase::Working(stage) => (ui::warn(cx), stage.label().to_string()),
-        Phase::Message(Notice::Error(_)) | Phase::Message(Notice::Warn(_)) => {
-            (ui::warn(cx), "需要留意".to_string())
-        }
+        Phase::Working(stage) => (ui::brand_teal(cx), stage.label().to_string()),
+        Phase::Message(Notice::Error(_)) => (ui::error(cx), "需要留意".to_string()),
+        Phase::Message(Notice::Warn(_)) => (ui::warn(cx), "需要留意".to_string()),
         Phase::Message(_) => (ui::ok(cx), "已完成".to_string()),
     };
     div()
         .flex()
         .items_center()
         .gap(px(6.0))
-        .h(px(24.0))
-        .px(px(10.0))
-        .rounded(px(12.0))
+        .h(px(28.0))
+        .px(px(12.0))
+        .rounded(px(9999.0))
         .bg(ui::card_bg(cx))
         .border_1()
         .border_color(ui::hairline(cx))
         .child(div().size(px(6.5)).rounded_full().bg(color))
         .child(
             div()
-                .text_size(rems(0.71875))
+                .text_size(px(13.0))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(ui::fg2(cx))
                 .child(label),
@@ -808,7 +900,7 @@ pub fn notice_look(notice: &Notice, cx: &App) -> (IconName, Hsla) {
         Notice::Done(_) => (IconName::Check, ui::ok(cx)),
         Notice::Copied => (IconName::Copy, ui::fg2(cx)),
         Notice::Warn(_) => (IconName::TriangleAlert, ui::warn(cx)),
-        Notice::Error(_) => (IconName::CircleAlert, ui::live(cx)),
+        Notice::Error(_) => (IconName::CircleAlert, ui::error(cx)),
     }
 }
 
@@ -837,17 +929,18 @@ pub fn key_row(
         let cancel_view = view.clone();
         row.child(
             div()
-                .text_size(rems(0.8125))
+                .flex_shrink_0()
+                .text_size(px(14.0))
                 .font_weight(FontWeight::MEDIUM)
-                .child("Gateway Key"),
+                .child("API Key"),
         )
         .child(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .child(Input::new(key_input).w_full()),
+                .child(Input::new(key_input).large().w_full()),
         )
-        .child(button("save-key", "保存", true, move |_window, cx| {
+        .child(button("save-key", "保存 Key", true, move |_window, cx| {
             let value = save_input.read(cx).value();
             save_session.update(cx, |session, cx| session.save_key(value.as_ref(), cx));
             let saved = save_session.read(cx).has_key();
@@ -872,9 +965,10 @@ pub fn key_row(
         let test_session = session.clone();
         row.child(
             div()
-                .text_size(rems(0.8125))
+                .flex_shrink_0()
+                .text_size(px(14.0))
                 .font_weight(FontWeight::MEDIUM)
-                .child("Gateway Key"),
+                .child("API Key"),
         )
         .child(
             div()
@@ -885,13 +979,13 @@ pub fn key_row(
         )
         .child(button(
             "test-gateway-key",
-            if testing { "正在测试…" } else { "测试连接" },
+            if testing { "正在测试" } else { "测试连接" },
             false,
             move |_, cx| {
                 test_session.update(cx, |session, cx| session.test_gateway(cx));
             },
         ))
-        .child(button("edit-key", "更换", false, move |_, cx| {
+        .child(button("edit-key", "更换 Key", false, move |_, cx| {
             edit_view.update(cx, |view, cx| {
                 view.key_editing = true;
                 cx.notify();
@@ -941,11 +1035,11 @@ pub fn path_row(
                 .when_some(test_status, |row, (ok, msg)| {
                     row.child(ui::pill(
                         ellipsize(&msg, 32),
-                        if ok { ui::ok(cx) } else { ui::live(cx) },
+                        if ok { ui::ok(cx) } else { ui::error(cx) },
                         if ok {
                             ui::ok_soft(cx)
                         } else {
-                            ui::live_soft(cx)
+                            ui::error(cx).opacity(0.14)
                         },
                     ))
                 })
@@ -1051,19 +1145,46 @@ pub fn icon_button(
         .child(Icon::new(icon).size(px(13.0)).text_color(ui::fg2(cx)))
 }
 
+fn clay_button(button: Button) -> Button {
+    button
+        .with_size(Size::Medium)
+        .rounded(px(12.0))
+        .h(px(44.0))
+        .px(px(20.0))
+        .font_weight(FontWeight::SEMIBOLD)
+}
+
 pub fn button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     primary: bool,
     action: impl Fn(&mut Window, &mut App) + 'static,
 ) -> Button {
-    let button = Button::new(id).label(label).with_size(Size::Small);
+    let button = Button::new(id).label(label);
+    let hairline: Hsla = rgb(0xe5e5e5).into();
     let button = if primary {
         button.primary()
     } else {
-        button.secondary()
+        button.secondary().border_1().border_color(hairline)
     };
-    button.on_click(move |_, window, cx| action(window, cx))
+    clay_button(button).on_click(move |_, window, cx| action(window, cx))
+}
+
+/// White button used on pink and teal feature cards.
+pub fn button_on_color(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    cx: &App,
+    action: impl Fn(&mut Window, &mut App) + 'static,
+) -> Button {
+    let variant = ButtonCustomVariant::new(cx)
+        .color(rgb(0xffffff).into())
+        .foreground(rgb(0x0a0a0a).into())
+        .hover(rgb(0xf5f0e0).into())
+        .active(rgb(0xebe6d6).into())
+        .shadow(false);
+    clay_button(Button::new(id).label(label).custom(variant))
+        .on_click(move |_, window, cx| action(window, cx))
 }
 
 pub fn ellipsize(text: &str, max: usize) -> String {

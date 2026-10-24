@@ -22,6 +22,7 @@ pub fn wave() -> [f32; WAVE_BARS] {
     WAVE.lock().map(|bars| *bars).unwrap_or([0.0; WAVE_BARS])
 }
 
+#[allow(dead_code)]
 pub fn default_device_name() -> String {
     cpal::default_host()
         .default_input_device()

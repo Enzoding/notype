@@ -4,8 +4,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::store::TriggerMode;
 
+const KEY_DOWN: u32 = 10;
 const FLAGS_CHANGED: u32 = 12;
 const KEYCODE_FIELD: u32 = 9;
+const KEY_ESCAPE: i64 = 53;
 
 pub const KEY_RIGHT_OPTION: i64 = 61;
 pub const KEY_LEFT_OPTION: i64 = 58;
@@ -26,6 +28,7 @@ pub enum HotkeyEvent {
     Toggle,
     HoldStart,
     HoldStop,
+    Cancel,
 }
 
 pub const HOTKEY_OPTIONS: &[(i64, &str, &str)] = &[
@@ -57,6 +60,13 @@ static TARGET_KEYCODE: AtomicI64 = AtomicI64::new(KEY_RIGHT_OPTION);
 static TRIGGER_MODE: AtomicU8 = AtomicU8::new(0); // 0 = Toggle, 1 = Hold
 static WAS_DOWN: AtomicBool = AtomicBool::new(false);
 static LAST_MS: AtomicU64 = AtomicU64::new(0);
+static CANCEL_ARMED: AtomicBool = AtomicBool::new(false);
+static LAST_CANCEL_MS: AtomicU64 = AtomicU64::new(0);
+
+/// While dictation or transcription is on screen, Esc is taken by this app.
+pub fn set_cancel_armed(armed: bool) {
+    CANCEL_ARMED.store(armed, Ordering::Relaxed);
+}
 static TX: OnceLock<Mutex<Option<mpsc::SyncSender<HotkeyEvent>>>> = OnceLock::new();
 
 pub fn set_hotkey_code(code: i64) {
@@ -98,11 +108,13 @@ pub fn listen(initial_code: i64, initial_mode: TriggerMode) -> mpsc::Receiver<Ho
 
 unsafe fn run_loop() {
     unsafe {
-        let mask = 1u64 << FLAGS_CHANGED;
+        let mask = (1u64 << KEY_DOWN) | (1u64 << FLAGS_CHANGED);
+        // Default tap so Esc can be consumed while dictation is active.
+        // Every other event is returned and continues to the front app.
         let tap = CGEventTapCreate(
             1,
             0,
-            1,
+            0,
             mask,
             tap_callback,
             std::ptr::null_mut(),
@@ -141,6 +153,22 @@ extern "C" fn tap_callback(
             let tap = TAP.load(Ordering::Relaxed);
             if !tap.is_null() {
                 CGEventTapEnable(tap, true);
+            }
+            return event;
+        }
+        if event_type == KEY_DOWN {
+            let code = CGEventGetIntegerValueField(event, KEYCODE_FIELD);
+            if code == KEY_ESCAPE && CANCEL_ARMED.load(Ordering::Relaxed) {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                let last = LAST_CANCEL_MS.load(Ordering::Relaxed);
+                if now.saturating_sub(last) > 250 {
+                    LAST_CANCEL_MS.store(now, Ordering::Relaxed);
+                    emit(HotkeyEvent::Cancel);
+                }
+                return std::ptr::null_mut();
             }
             return event;
         }

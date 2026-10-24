@@ -1,4 +1,5 @@
 use gpui_kit::component::input::Input;
+use gpui_kit::component::Sizable;
 use gpui_kit::component::IconName;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -72,7 +73,7 @@ impl SettingsView {
                                 div()
                                     .flex()
                                     .items_center()
-                                    .gap(px(6.0))
+                                    .gap(px(12.0))
                                     .child({
                                         let s = session_handle.clone();
                                         let v = view.clone();
@@ -120,12 +121,12 @@ impl SettingsView {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(8.0))
+                            .gap(px(12.0))
                             .child(
                                 div()
                                     .flex_1()
                                     .min_w(px(0.0))
-                                    .child(Input::new(&phrase_input).w_full()),
+                                    .child(Input::new(&phrase_input).large().w_full()),
                             )
                             .child({
                                 let input = phrase_input.clone();
@@ -143,7 +144,7 @@ impl SettingsView {
                             .flex()
                             .items_center()
                             .flex_wrap()
-                            .gap(px(6.0))
+                            .gap(px(12.0))
                             .child(
                                 div()
                                     .text_size(rems(0.6875))

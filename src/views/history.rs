@@ -1,4 +1,5 @@
 use gpui_kit::component::input::Input;
+use gpui_kit::component::Sizable;
 use gpui_kit::component::IconName;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{Context, IntoElement, ParentElement, Styled, div, px};
@@ -60,17 +61,17 @@ impl SettingsView {
                     .items_center()
                     .justify_between()
                     .flex_wrap()
-                    .gap(px(10.0))
+                    .gap(px(12.0))
                     .child(
                         div()
                             .w(px(260.0))
-                            .child(Input::new(&search_input).w_full()),
+                            .child(Input::new(&search_input).large().w_full()),
                     )
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(6.0))
+                            .gap(px(12.0))
                             .children(
                                 [
                                     ("all", "全部"),

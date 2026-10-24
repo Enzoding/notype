@@ -1,197 +1,309 @@
-//! Semantic tokens and surface primitives for the interface.
+//! Clay tokens for the workspace.
 //!
-//! Designed around Apple's Human Interface Guidelines (materials, depth,
-//! optical hierarchy, and semantic status colors) so both dark and light
-//! appearances feel native to macOS.
+//! The floor stays cream in every appearance. Saturated feature cards carry
+//! the color; semantic green, amber, and red stay separate from that palette.
 
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{
-    App, Div, FontWeight, Hsla, IntoElement, ParentElement, SharedString, Styled, div, hsla, px,
-    rems, rgb,
+    App, Div, FontWeight, Hsla, IntoElement, ParentElement, SharedString, Styled, div, px, rems,
+    rgb,
 };
 
 /// Whether the window is currently in dark appearance.
+#[allow(dead_code)]
 pub fn is_dark(cx: &App) -> bool {
     cx.theme().is_dark()
 }
 
-/// Primary ink: titles, body text, primary values.
+fn ignore(cx: &App) {
+    let _ = cx;
+}
+
+/// Headlines and primary text. `{colors.ink}` `#0a0a0a`.
 pub fn fg(cx: &App) -> Hsla {
-    cx.theme().foreground
+    ignore(cx);
+    rgb(0x0a0a0a).into()
 }
 
-/// Secondary ink: descriptions, row metadata, inactive nav labels.
+/// Sub-headings and secondary labels. `{colors.muted}` `#6a6a6a`.
 pub fn fg2(cx: &App) -> Hsla {
-    cx.theme().muted_foreground
+    ignore(cx);
+    rgb(0x6a6a6a).into()
 }
 
-/// Tertiary ink: captions, timestamps, paths, model identifiers.
+/// Captions and fine print. `{colors.muted-soft}` `#9a9a9a`.
 pub fn fg3(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        hsla(0.0, 0.0, 1.0, 0.42)
-    } else {
-        hsla(0.0, 0.0, 0.0, 0.44)
-    }
+    ignore(cx);
+    rgb(0x9a9a9a).into()
 }
 
-/// Structural sidebar surface: slightly heavier material than the main canvas.
+/// Running text. `{colors.body}` `#3a3a3a`.
+pub fn body(cx: &App) -> Hsla {
+    ignore(cx);
+    rgb(0x3a3a3a).into()
+}
+
+/// Footer and sidebar. `{colors.surface-soft}` `#faf5e8`.
 pub fn sidebar_bg(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        rgb(0x141417).into()
-    } else {
-        rgb(0xf2f2f5).into()
-    }
+    ignore(cx);
+    rgb(0xfaf5e8).into()
 }
 
-/// Main content canvas background.
+/// Page floor. `{colors.canvas}` `#fffaf0`.
 pub fn canvas_bg(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        rgb(0x1a1a1e).into()
-    } else {
-        rgb(0xfafafc).into()
-    }
+    ignore(cx);
+    rgb(0xfffaf0).into()
 }
 
-/// Subtle hairline border for cards, dividers, and table rows.
+/// 1px borders. `{colors.hairline}` `#e5e5e5`.
 pub fn hairline(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        hsla(0.0, 0.0, 1.0, 0.075)
-    } else {
-        hsla(0.0, 0.0, 0.0, 0.08)
-    }
+    ignore(cx);
+    rgb(0xe5e5e5).into()
 }
 
-/// Stronger border for active or emphasized surfaces.
+/// Emphasized cream edge. `{colors.surface-strong}` `#ebe6d6`.
 pub fn border_strong(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        hsla(0.0, 0.0, 1.0, 0.14)
-    } else {
-        hsla(0.0, 0.0, 0.0, 0.15)
-    }
+    ignore(cx);
+    rgb(0xebe6d6).into()
 }
 
-/// Grouped card surface: one tone step above the canvas.
+/// Cream feature and testimonial cards. `{colors.surface-card}` `#f5f0e0`.
 pub fn card_bg(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        hsla(0.0, 0.0, 1.0, 0.038)
-    } else {
-        rgb(0xffffff).into()
-    }
+    ignore(cx);
+    rgb(0xf5f0e0).into()
 }
 
-/// Elevated or inset sub-surface inside a card (e.g. code/raw blocks, wells).
+/// Stronger cream wells. `{colors.surface-strong}` `#ebe6d6`.
 pub fn well_bg(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        hsla(0.0, 0.0, 0.0, 0.26)
-    } else {
-        hsla(0.0, 0.0, 0.0, 0.035)
-    }
+    ignore(cx);
+    rgb(0xebe6d6).into()
 }
 
-/// Interactive row or card hover surface.
+/// Pressed or hovered cream. Same stronger cream, no extra shadow.
 pub fn card_hover(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        hsla(0.0, 0.0, 1.0, 0.065)
-    } else {
-        hsla(0.0, 0.0, 0.0, 0.042)
-    }
+    ignore(cx);
+    rgb(0xebe6d6).into()
 }
 
-/// Apple system blue accent.
+/// Primary CTAs. `{colors.primary}` `#0a0a0a`.
 pub fn accent(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        rgb(0x0a84ff).into()
-    } else {
-        rgb(0x007aff).into()
-    }
+    ignore(cx);
+    rgb(0x0a0a0a).into()
+}
+
+/// Text on primary buttons and on pink or teal cards. `{colors.on-primary}` `#ffffff`.
+pub fn on_accent(cx: &App) -> Hsla {
+    ignore(cx);
+    rgb(0xffffff).into()
+}
+
+pub fn on_primary(cx: &App) -> Hsla {
+    on_accent(cx)
 }
 
 pub fn accent_soft(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        hsla(210.0 / 360.0, 1.0, 0.55, 0.16)
-    } else {
-        hsla(211.0 / 360.0, 1.0, 0.50, 0.11)
-    }
+    well_bg(cx)
 }
 
-/// Recording / live / destructive red.
+/// Hot pink feature fill. `{colors.brand-pink}` `#ff4d8b`.
+pub fn brand_pink(cx: &App) -> Hsla {
+    ignore(cx);
+    rgb(0xff4d8b).into()
+}
+
+/// Deep teal feature fill. `{colors.brand-teal}` `#1a3a3a`.
+pub fn brand_teal(cx: &App) -> Hsla {
+    ignore(cx);
+    rgb(0x1a3a3a).into()
+}
+
+/// Lavender feature fill. `{colors.brand-lavender}` `#b8a4ed`.
+pub fn brand_lavender(cx: &App) -> Hsla {
+    ignore(cx);
+    rgb(0xb8a4ed).into()
+}
+
+/// Peach feature fill. `{colors.brand-peach}` `#ffb084`.
+pub fn brand_peach(cx: &App) -> Hsla {
+    ignore(cx);
+    rgb(0xffb084).into()
+}
+
+/// Ochre feature fill. `{colors.brand-ochre}` `#e8b94a`.
+pub fn brand_ochre(cx: &App) -> Hsla {
+    ignore(cx);
+    rgb(0xe8b94a).into()
+}
+
+/// Mint illustration accent. `{colors.brand-mint}` `#a4d4c5`.
+#[allow(dead_code)]
+pub fn brand_mint(cx: &App) -> Hsla {
+    ignore(cx);
+    rgb(0xa4d4c5).into()
+}
+
+/// Coral highlight. `{colors.brand-coral}` `#ff6b5a`.
+#[allow(dead_code)]
+pub fn brand_coral(cx: &App) -> Hsla {
+    ignore(cx);
+    rgb(0xff6b5a).into()
+}
+
+/// Listening indicator. Same pink as the listening feature card.
 pub fn live(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        rgb(0xff453a).into()
-    } else {
-        rgb(0xd70015).into()
-    }
+    brand_pink(cx)
 }
 
+#[allow(dead_code)]
 pub fn live_soft(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        hsla(3.0 / 360.0, 1.0, 0.61, 0.16)
-    } else {
-        hsla(354.0 / 360.0, 1.0, 0.42, 0.10)
-    }
+    brand_pink(cx).opacity(0.18)
 }
 
-/// Ready / verified green.
+/// Success. `{colors.success}` `#22c55e`.
 pub fn ok(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        rgb(0x30d158).into()
-    } else {
-        rgb(0x248a3d).into()
-    }
+    ignore(cx);
+    rgb(0x22c55e).into()
 }
 
 pub fn ok_soft(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        hsla(135.0 / 360.0, 0.63, 0.50, 0.15)
-    } else {
-        hsla(135.0 / 360.0, 0.59, 0.34, 0.10)
-    }
+    ok(cx).opacity(0.16)
 }
 
-/// Working / warning amber.
+/// Warning. `{colors.warning}` `#f59e0b`. Not the ochre feature card.
 pub fn warn(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        rgb(0xff9f0a).into()
-    } else {
-        rgb(0xb25000).into()
-    }
+    ignore(cx);
+    rgb(0xf59e0b).into()
 }
 
 pub fn warn_soft(cx: &App) -> Hsla {
-    if is_dark(cx) {
-        hsla(36.0 / 360.0, 1.0, 0.52, 0.16)
-    } else {
-        hsla(27.0 / 360.0, 1.0, 0.35, 0.10)
-    }
+    warn(cx).opacity(0.18)
 }
 
-// The floating HUD always uses a dark material over the desktop wallpaper.
+/// Validation and failure. `{colors.error}` `#ef4444`.
+pub fn error(cx: &App) -> Hsla {
+    ignore(cx);
+    rgb(0xef4444).into()
+}
+
+/// The floating HUD stays cream in both appearances, so it reads as the same object over the desktop.
+pub fn hud_bg() -> Hsla {
+    rgb(0xfffaf0).into()
+}
+
 pub fn hud_live() -> Hsla {
-    rgb(0xff453a).into()
+    rgb(0xff4d8b).into()
+}
+
+pub fn hud_error() -> Hsla {
+    rgb(0xef4444).into()
 }
 
 pub fn hud_ok() -> Hsla {
-    rgb(0x30d158).into()
+    rgb(0x22c55e).into()
 }
 
 pub fn hud_warn() -> Hsla {
-    rgb(0xff9f0a).into()
-}
-
-pub fn hud_accent() -> Hsla {
-    rgb(0x0a84ff).into()
+    rgb(0xf59e0b).into()
 }
 
 pub fn hud_dim() -> Hsla {
-    hsla(0.0, 0.0, 1.0, 0.72)
+    rgb(0x3a3a3a).into()
 }
 
 pub fn hud_fg() -> Hsla {
-    hsla(0.0, 0.0, 1.0, 0.95)
+    rgb(0x0a0a0a).into()
 }
 
 pub fn hud_fg_dim() -> Hsla {
-    hsla(0.0, 0.0, 1.0, 0.48)
+    rgb(0x6a6a6a).into()
+}
+
+/// Align stock controls with the cream canvas after the system theme loads.
+pub fn sync_controls(cx: &mut App) {
+    gpui_kit::component::Theme::update(cx, |theme| {
+        theme.colors.background = rgb(0xfffaf0).into();
+        theme.colors.foreground = rgb(0x0a0a0a).into();
+        theme.colors.muted_foreground = rgb(0x6a6a6a).into();
+        theme.colors.primary = rgb(0x0a0a0a).into();
+        theme.colors.primary_foreground = rgb(0xffffff).into();
+        theme.colors.primary_hover = rgb(0x1a1a1a).into();
+        theme.colors.primary_active = rgb(0x0a0a0a).into();
+        theme.colors.button_primary = rgb(0x0a0a0a).into();
+        theme.colors.button_primary_foreground = rgb(0xffffff).into();
+        theme.colors.button_primary_hover = rgb(0x1a1a1a).into();
+        theme.colors.button_primary_active = rgb(0x0a0a0a).into();
+        theme.colors.secondary = rgb(0xfffaf0).into();
+        theme.colors.secondary_foreground = rgb(0x0a0a0a).into();
+        theme.colors.secondary_hover = rgb(0xf5f0e0).into();
+        theme.colors.secondary_active = rgb(0xebe6d6).into();
+        theme.colors.button_secondary = rgb(0xfffaf0).into();
+        theme.colors.button_secondary_foreground = rgb(0x0a0a0a).into();
+        theme.colors.button_secondary_hover = rgb(0xf5f0e0).into();
+        theme.colors.button_secondary_active = rgb(0xebe6d6).into();
+        theme.colors.border = rgb(0xe5e5e5).into();
+        theme.colors.input = rgb(0xe5e5e5).into();
+        theme.colors.ring = rgb(0x0a0a0a).into();
+        theme.colors.caret = rgb(0x0a0a0a).into();
+        theme.colors.selection = rgb(0xb8a4ed).into();
+        theme.colors.success = rgb(0x22c55e).into();
+        theme.colors.warning = rgb(0xf59e0b).into();
+        theme.colors.danger = rgb(0xef4444).into();
+        theme.radius = px(12.);
+        theme.shadow = false;
+    });
+}
+
+/// The six feature-card fills. Pink and teal take white type; the rest take ink.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum FeatureFill {
+    Pink,
+    Teal,
+    Lavender,
+    Peach,
+    Ochre,
+    Cream,
+}
+
+impl FeatureFill {
+    pub fn bg(self, cx: &App) -> Hsla {
+        match self {
+            Self::Pink => brand_pink(cx),
+            Self::Teal => brand_teal(cx),
+            Self::Lavender => brand_lavender(cx),
+            Self::Peach => brand_peach(cx),
+            Self::Ochre => brand_ochre(cx),
+            Self::Cream => card_bg(cx),
+        }
+    }
+
+    pub fn on_dark(self) -> bool {
+        matches!(self, Self::Pink | Self::Teal)
+    }
+
+    pub fn ink(self, cx: &App) -> Hsla {
+        if self.on_dark() {
+            on_primary(cx)
+        } else {
+            fg(cx)
+        }
+    }
+
+    pub fn muted(self, cx: &App) -> Hsla {
+        if self.on_dark() {
+            on_primary(cx).opacity(0.82)
+        } else {
+            fg2(cx)
+        }
+    }
+}
+
+/// Saturated feature card: 24px radius, no shadow, no hairline.
+pub fn feature_surface(fill: FeatureFill, cx: &App) -> Div {
+    div()
+        .rounded(px(24.0))
+        .bg(fill.bg(cx))
+        .text_color(fill.ink(cx))
+        .overflow_hidden()
 }
 
 /// A section heading: quiet, structured, and spaced cleanly above its card.
@@ -202,7 +314,7 @@ pub fn section_label(text: impl Into<SharedString>, trailing: Option<String>) ->
         .gap(px(8.0))
         .child(
             div()
-                .text_size(rems(0.75))
+                .text_size(px(12.0))
                 .font_weight(FontWeight::SEMIBOLD)
                 .child(text.into()),
         );
@@ -222,7 +334,7 @@ pub fn card(cx: &App) -> Div {
     div()
         .flex()
         .flex_col()
-        .rounded(px(12.0))
+        .rounded(px(16.0))
         .bg(card_bg(cx))
         .border_1()
         .border_color(hairline(cx))
@@ -252,11 +364,11 @@ pub fn pill(label: impl Into<SharedString>, fg_color: Hsla, bg_color: Hsla) -> i
     div()
         .flex()
         .items_center()
-        .h(px(20.0))
-        .px(px(7.5))
-        .rounded(px(6.0))
+        .h(px(22.0))
+        .px(px(10.0))
+        .rounded(px(9999.0))
         .bg(bg_color)
-        .text_size(rems(0.6875))
+        .text_size(px(13.0))
         .font_weight(FontWeight::MEDIUM)
         .text_color(fg_color)
         .child(label.into())

@@ -30,6 +30,14 @@ impl Stage {
         }
     }
 
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Stage::Transcribe => "转写",
+            Stage::Polish => "润色",
+            Stage::Insert => "贴入",
+        }
+    }
+
     pub fn index(self) -> usize {
         match self {
             Stage::Transcribe => 0,
@@ -311,7 +319,7 @@ impl Session {
             let _ = this.update(cx, |session, cx| {
                 session.gateway_testing = false;
                 session.gateway_test_status = Some(match res {
-                    Ok(ms) => (true, format!("连接正常 · 延迟 {ms} ms")),
+                    Ok(ms) => (true, format!("已连通，延迟 {ms} ms")),
                     Err(err) => (false, err),
                 });
                 cx.notify();
@@ -326,7 +334,7 @@ impl Session {
             return;
         }
         if self.key.is_empty() {
-            self.studio_output = "请先在「偏好设置」中配置 AI Gateway Key。".into();
+            self.studio_output = "先在偏好设置里保存 API Key。".into();
             cx.notify();
             return;
         }
@@ -520,6 +528,9 @@ impl Session {
                         if changed {
                             cx.notify();
                         }
+                        if matches!(session.phase, Phase::Listening | Phase::Working(_)) {
+                            crate::overlay::track_voice_display();
+                        }
                         if matches!(session.phase, Phase::Listening | Phase::Working(_))
                             || session.mic_testing
                         {
@@ -547,16 +558,16 @@ impl Session {
     pub fn save_key(&mut self, value: &str, cx: &mut Context<Self>) {
         let value = value.trim();
         if value.is_empty() {
-            self.key_status = "输入框是空的".into();
+            self.key_status = "先粘贴 API Key。".into();
             cx.notify();
             return;
         }
         match secrets::save_key(value) {
             Ok(_) => {
                 self.key = value.to_string();
-                self.key_status = "已保存到 .env.local".into();
+                self.key_status = "已保存到 .env.local。".into();
             }
-            Err(err) => self.key_status = format!("写入失败：{err}"),
+            Err(err) => self.key_status = format!("无法保存。{err}"),
         }
         cx.notify();
     }
@@ -601,6 +612,7 @@ impl Session {
                     self.finish(cx);
                 }
             }
+            HotkeyEvent::Cancel => self.cancel_active(cx),
         }
     }
 
@@ -628,7 +640,22 @@ impl Session {
         self.studio_dictating = false;
         self.level = 0.0;
         self.wave = [0.0; crate::capture::WAVE_BARS];
-        self.note(Notice::Warn("已取消录音".into()), cx);
+        self.note(Notice::Warn("已取消".into()), cx);
+    }
+
+    /// Drops an in-progress recording or transcription without pasting.
+    pub fn cancel_active(&mut self, cx: &mut Context<Self>) {
+        if self.recording.is_some() {
+            self.cancel_recording(cx);
+            return;
+        }
+        if matches!(self.phase, Phase::Working(_)) {
+            self.generation = self.generation.wrapping_add(1);
+            self.stages = None;
+            self.level = 0.0;
+            self.wave = [0.0; crate::capture::WAVE_BARS];
+            self.note(Notice::Warn("已取消".into()), cx);
+        }
     }
 
     fn begin(&mut self, for_studio: bool, cx: &mut Context<Self>) {
@@ -738,6 +765,7 @@ impl Session {
             .map(|m| m.as_str().to_string())
             .unwrap_or_else(|| "raw".to_string());
         let wav_for_task = wav.clone();
+        let generation = self.generation;
 
         self.level = 0.0;
         self.wave = [0.0; crate::capture::WAVE_BARS];
@@ -770,6 +798,9 @@ impl Session {
                 })
                 .await;
             let _ = this.update(cx, |session, cx| {
+                if session.generation != generation || !matches!(session.phase, Phase::Working(_)) {
+                    return;
+                }
                 session.deliver(
                     outcome,
                     &bundle_id,
@@ -905,6 +936,10 @@ impl Session {
     }
 
     fn sync_voice(&mut self, cx: &mut Context<Self>) {
+        hotkey::set_cancel_armed(matches!(
+            self.phase,
+            Phase::Listening | Phase::Working(_)
+        ));
         self.hide_epoch = self.hide_epoch.wrapping_add(1);
         if matches!(self.phase, Phase::Idle) {
             let epoch = self.hide_epoch;
@@ -973,11 +1008,11 @@ fn run_pipeline(
 
 fn key_status(key: &str, source: &KeySource) -> String {
     if key.is_empty() {
-        return "尚未配置 Key".into();
+        return "还没有 API Key。".into();
     }
     match source {
-        KeySource::File(_) => "已从 .env.local 加载".into(),
-        KeySource::Missing => "尚未配置 Key".into(),
+        KeySource::File(_) => "已从 .env.local 读取。".into(),
+        KeySource::Missing => "还没有 API Key。".into(),
     }
 }
 

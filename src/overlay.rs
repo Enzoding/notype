@@ -3,15 +3,16 @@ use std::time::Duration;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{Icon, IconName, Sizable, Size};
 use gpui_kit::{
-    Animation, AnimationExt, App, BoxShadow, Context, Entity, FontWeight, Hsla, IntoElement,
-    ParentElement, Render, Styled, Window, div, hsla, linear_color_stop, linear_gradient, px,
-    rems, rgb,
+    Animation, AnimationExt, Context, Entity, FontWeight, Hsla, IntoElement, ParentElement,
+    Render, Styled, Window, div, px,
 };
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSApplication, NSWindow, NSWindowButton, NSWindowTitleVisibility};
+use objc2_app_kit::{
+    NSApplication, NSColor, NSEvent, NSFloatingWindowLevel, NSScreen, NSView, NSWindow,
+    NSWindowCollectionBehavior, NSWindowStyleMask, NSWindowTitleVisibility,
+};
+use objc2_foundation::{NSPoint, NSString};
 
-use crate::hotkey;
-use crate::polish;
 use crate::session::{Notice, Phase, Session, Stage, mmss};
 use crate::ui;
 use crate::views::components::ellipsize;
@@ -40,6 +41,7 @@ pub fn set_voice_visible(visible: bool) {
         quiet_panel(window);
         window.setAlphaValue(if visible { 1.0 } else { 0.0 });
         if visible {
+            place_on_active_display(window);
             window.orderFrontRegardless();
         }
     });
@@ -48,17 +50,72 @@ pub fn set_voice_visible(visible: bool) {
 fn quiet_panel(window: &NSWindow) {
     window.setHidesOnDeactivate(false);
     window.setIgnoresMouseEvents(true);
-    window.setTitlebarAppearsTransparent(true);
-    window.setTitleVisibility(NSWindowTitleVisibility::Hidden);
-    for kind in [
-        NSWindowButton::CloseButton,
-        NSWindowButton::MiniaturizeButton,
-        NSWindowButton::ZoomButton,
-    ] {
-        if let Some(button) = window.standardWindowButton(kind) {
-            button.setHidden(true);
+    window.setLevel(NSFloatingWindowLevel);
+    window.setCollectionBehavior(
+        NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::FullScreenAuxiliary,
+    );
+    // A titled panel keeps a rectangular window border around the pill.
+    // Borderless drops that chrome; the capsule is the only painted shape.
+    let borderless = NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel;
+    if window.styleMask() != borderless {
+        let children = window
+            .contentView()
+            .map(|view| view.subviews().to_vec())
+            .unwrap_or_default();
+        window.setStyleMask(borderless);
+        window.setTitle(&NSString::from_str(VOICE_TITLE));
+        if let Some(content) = window.contentView() {
+            reattach_views(&content, &children);
         }
     }
+    window.setOpaque(false);
+    window.setBackgroundColor(Some(&NSColor::clearColor()));
+    window.setHasShadow(false);
+}
+
+fn reattach_views(content: &NSView, children: &[objc2::rc::Retained<NSView>]) {
+    for child in children {
+        content.addSubview(child);
+    }
+}
+
+/// Moves the pill when the pointer has crossed onto another display.
+/// Called throughout a session, not only when the capsule first appears.
+pub fn track_voice_display() {
+    with_voice_window(place_on_active_display);
+}
+
+/// Puts the pill at the bottom center of whichever display the pointer is on.
+fn place_on_active_display(window: &NSWindow) {
+    let Some(marker) = MainThreadMarker::new() else {
+        return;
+    };
+    let mouse = NSEvent::mouseLocation();
+    let screens = NSScreen::screens(marker);
+    let screen = screens
+        .iter()
+        .find(|screen| contains_point(screen.frame(), mouse))
+        .or_else(|| NSScreen::mainScreen(marker));
+    let Some(screen) = screen else {
+        return;
+    };
+    let visible = screen.visibleFrame();
+    let frame = window.frame();
+    let x = visible.origin.x + (visible.size.width - frame.size.width) / 2.0;
+    let y = visible.origin.y + 16.0;
+    let origin = window.frame().origin;
+    if (origin.x - x).abs() < 1.0 && (origin.y - y).abs() < 1.0 {
+        return;
+    }
+    window.setFrameOrigin(NSPoint::new(x, y));
+}
+
+fn contains_point(frame: objc2_foundation::NSRect, point: NSPoint) -> bool {
+    point.x >= frame.origin.x
+        && point.x < frame.origin.x + frame.size.width
+        && point.y >= frame.origin.y
+        && point.y < frame.origin.y + frame.size.height
 }
 
 fn with_voice_window(apply: impl Fn(&NSWindow)) {
@@ -90,41 +147,29 @@ impl OverlayView {
 
 impl Render for OverlayView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (phase, wave, elapsed, active_bundle, polish_strategy, hotkey_code, appearance, exiting) = {
+        let (phase, wave, elapsed, appearance, exiting) = {
             let session = self.session.read(cx);
             (
                 session.phase.clone(),
                 session.wave,
                 session.elapsed(),
-                session.active_bundle.clone(),
-                session.polish_strategy.clone(),
-                session.hotkey_code,
                 session.appearance,
                 session.exiting,
             )
         };
 
-        let app_name = polish::friendly_app_name(&active_bundle);
-        let mode_label = polish::resolve_mode(&polish_strategy, &active_bundle)
-            .map(|m| m.short_label())
-            .unwrap_or("原文");
-        let context_tag = format!("{app_name} · {mode_label}");
-        let hk_badge = hotkey::hotkey_badge(hotkey_code);
-
         let content = match &phase {
             Phase::Idle => div(),
-            Phase::Listening => listening_view(wave, elapsed, &context_tag, hk_badge),
-            Phase::Working(stage) => working_view(*stage, &context_tag),
-            Phase::Message(notice) => message_view(notice, cx),
+            Phase::Listening => listening_view(wave, elapsed),
+            Phase::Working(stage) => working_view(*stage),
+            Phase::Message(notice) => message_view(notice),
         };
 
         div()
             .flex()
-            .flex_col()
-            .justify_end()
-            .items_center()
             .size_full()
-            .pb(px(10.0))
+            .items_center()
+            .justify_center()
             .child(content.with_animation(
                 ("hud", appearance),
                 Animation::new(if exiting {
@@ -149,34 +194,17 @@ fn hud_shell() -> gpui_kit::Div {
     div()
         .flex()
         .items_center()
-        .h(px(54.0))
+        .h(px(44.0))
         .px(px(16.0))
-        .rounded(px(18.0))
-        .bg(linear_gradient(
-            180.0,
-            linear_color_stop(rgb(0x1d1d22), 0.0),
-            linear_color_stop(rgb(0x111114), 1.0),
-        ))
-        .border_1()
-        .border_color(hsla(0.0, 0.0, 1.0, 0.09))
-        .shadow(vec![
-            BoxShadow::new(px(0.0), px(1.0), hsla(0.0, 0.0, 1.0, 0.12)).inset(),
-            BoxShadow::new(px(0.0), px(14.0), hsla(0.0, 0.0, 0.0, 0.58))
-                .blur_radius(px(30.0))
-                .spread_radius(px(-6.0)),
-        ])
-        .text_size(rems(0.8125))
+        .gap(px(10.0))
+        .rounded_full()
+        .bg(ui::hud_bg())
+        .text_size(px(14.0))
         .text_color(ui::hud_fg())
 }
 
-fn listening_view(
-    wave: [f32; crate::capture::WAVE_BARS],
-    elapsed: Duration,
-    context_tag: &str,
-    hk_badge: &str,
-) -> gpui_kit::Div {
+fn listening_view(wave: [f32; crate::capture::WAVE_BARS], elapsed: Duration) -> gpui_kit::Div {
     hud_shell()
-        .gap(px(12.0))
         .child(div().size(px(8.0)).rounded_full().bg(ui::hud_live()))
         .child(
             div()
@@ -184,22 +212,7 @@ fn listening_view(
                 .child(mmss(elapsed)),
         )
         .child(wave_view(wave))
-        .child(
-            div()
-                .px(px(7.0))
-                .py(px(2.5))
-                .rounded(px(6.0))
-                .bg(hsla(0.0, 0.0, 1.0, 0.08))
-                .text_size(rems(0.6875))
-                .text_color(ui::hud_dim())
-                .child(context_tag.to_string()),
-        )
-        .child(
-            div()
-                .text_size(rems(0.6875))
-                .text_color(ui::hud_fg_dim())
-                .child(hk_badge.to_string()),
-        )
+        .child(esc_hint())
 }
 
 fn wave_view(wave: [f32; crate::capture::WAVE_BARS]) -> gpui_kit::Div {
@@ -207,7 +220,7 @@ fn wave_view(wave: [f32; crate::capture::WAVE_BARS]) -> gpui_kit::Div {
         .flex()
         .items_center()
         .gap(px(2.0))
-        .h(px(28.0))
+        .h(px(18.0))
         .children((0..crate::capture::WAVE_BARS * 2).map(move |index| {
             let source = if index < crate::capture::WAVE_BARS {
                 crate::capture::WAVE_BARS - 1 - index
@@ -215,7 +228,7 @@ fn wave_view(wave: [f32; crate::capture::WAVE_BARS]) -> gpui_kit::Div {
                 index - crate::capture::WAVE_BARS
             };
             let level = wave[source].clamp(0.0, 1.0).powf(0.65);
-            let height = 4.0 + level * 22.0;
+            let height = 3.0 + level * 14.0;
             let center = crate::capture::WAVE_BARS as f32 - 0.5;
             let distance = (index as f32 - center).abs() / crate::capture::WAVE_BARS as f32;
             let alpha = 0.38 + 0.62 * (1.0 - distance).clamp(0.0, 1.0);
@@ -223,49 +236,26 @@ fn wave_view(wave: [f32; crate::capture::WAVE_BARS]) -> gpui_kit::Div {
                 .w(px(2.5))
                 .h(px(height))
                 .rounded(px(1.25))
-                .bg(hsla(0.0, 0.0, 1.0, alpha))
+                .bg(ui::hud_live().opacity(alpha))
         }))
 }
 
-fn working_view(stage: Stage, context_tag: &str) -> gpui_kit::Div {
+fn working_view(stage: Stage) -> gpui_kit::Div {
     hud_shell()
-        .flex_col()
-        .items_stretch()
-        .justify_center()
-        .h(px(64.0))
-        .min_w(px(260.0))
-        .gap(px(9.0))
-        .px(px(16.0))
+        .child(Spinner::new().with_size(Size::Small))
         .child(
             div()
-                .flex()
-                .items_center()
-                .gap(px(8.0))
-                .child(Spinner::new().with_size(Size::Small))
-                .child(div().font_weight(FontWeight::MEDIUM).child(stage.label()))
-                .child(div().flex_1())
-                .child(
-                    div()
-                        .text_size(rems(0.6875))
-                        .text_color(ui::hud_fg_dim())
-                        .child(format!("{context_tag} · {}/3", stage.index() + 1)),
-                ),
+                .font_weight(FontWeight::MEDIUM)
+                .child(stage.short_label()),
         )
-        .child(segments(stage))
+        .child(esc_hint())
 }
 
-fn segments(stage: Stage) -> gpui_kit::Div {
-    let active = stage.index();
-    div().flex().gap(px(3.0)).children((0..3).map(move |index| {
-        let color = if index < active {
-            ui::hud_accent()
-        } else if index == active {
-            hsla(0.0, 0.0, 1.0, 0.72)
-        } else {
-            hsla(0.0, 0.0, 1.0, 0.16)
-        };
-        div().flex_1().h(px(2.5)).rounded(px(1.25)).bg(color)
-    }))
+fn esc_hint() -> gpui_kit::Div {
+    div()
+        .text_size(px(12.0))
+        .text_color(ui::hud_fg_dim())
+        .child("esc")
 }
 
 fn hud_notice_look(notice: &Notice) -> (IconName, Hsla) {
@@ -273,22 +263,15 @@ fn hud_notice_look(notice: &Notice) -> (IconName, Hsla) {
         Notice::Done(_) => (IconName::Check, ui::hud_ok()),
         Notice::Copied => (IconName::Copy, ui::hud_dim()),
         Notice::Warn(_) => (IconName::TriangleAlert, ui::hud_warn()),
-        Notice::Error(_) => (IconName::CircleAlert, ui::hud_live()),
+        Notice::Error(_) => (IconName::CircleAlert, ui::hud_error()),
     }
 }
 
-fn message_view(notice: &Notice, _cx: &App) -> gpui_kit::Div {
+fn message_view(notice: &Notice) -> gpui_kit::Div {
     let (icon, color) = hud_notice_look(notice);
-    let shell = hud_shell()
-        .gap(px(9.0))
-        .child(Icon::new(icon).size(px(15.0)).text_color(color));
-    match notice {
-        Notice::Error(_) => shell.child(
-            div()
-                .max_w(px(340.0))
-                .text_size(rems(0.8125))
-                .child(ellipsize(notice.text(), 48)),
-        ),
-        _ => shell.child(div().child(notice.text().to_string())),
-    }
+    hud_shell().child(Icon::new(icon).size(px(16.0)).text_color(color)).child(
+        div()
+            .max_w(px(320.0))
+            .child(ellipsize(notice.text(), 36)),
+    )
 }
