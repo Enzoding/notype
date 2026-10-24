@@ -1,24 +1,90 @@
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, AtomicU64, AtomicU8, Ordering};
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::store::TriggerMode;
+
 const FLAGS_CHANGED: u32 = 12;
 const KEYCODE_FIELD: u32 = 9;
-const RIGHT_OPTION: i64 = 61;
+
+pub const KEY_RIGHT_OPTION: i64 = 61;
+pub const KEY_LEFT_OPTION: i64 = 58;
+pub const KEY_RIGHT_COMMAND: i64 = 54;
+pub const KEY_FN: i64 = 63;
+
 const ALT: u64 = 0x0008_0000;
 const SHIFT: u64 = 0x0002_0000;
 const CONTROL: u64 = 0x0004_0000;
 const COMMAND: u64 = 0x0010_0000;
+const SECONDARY_FN: u64 = 0x0080_0000;
+
 const DISABLED_TIMEOUT: u32 = 0xFFFF_FFFE;
 const DISABLED_USER: u32 = 0xFFFF_FFFF;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HotkeyEvent {
+    Toggle,
+    HoldStart,
+    HoldStop,
+}
+
+pub const HOTKEY_OPTIONS: &[(i64, &str, &str)] = &[
+    (KEY_RIGHT_OPTION, "右 Option", "右 ⌥"),
+    (KEY_LEFT_OPTION, "左 Option", "左 ⌥"),
+    (KEY_RIGHT_COMMAND, "右 Command", "右 ⌘"),
+    (KEY_FN, "Fn / 地球键", "Fn"),
+];
+
+pub fn hotkey_label(code: i64) -> &'static str {
+    HOTKEY_OPTIONS
+        .iter()
+        .find(|(c, _, _)| *c == code)
+        .map(|(_, label, _)| *label)
+        .unwrap_or("右 Option")
+}
+
+pub fn hotkey_badge(code: i64) -> &'static str {
+    HOTKEY_OPTIONS
+        .iter()
+        .find(|(c, _, _)| *c == code)
+        .map(|(_, _, badge)| *badge)
+        .unwrap_or("右 ⌥")
+}
+
 static TAP: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+static TAP_ACTIVE: AtomicBool = AtomicBool::new(false);
+static TARGET_KEYCODE: AtomicI64 = AtomicI64::new(KEY_RIGHT_OPTION);
+static TRIGGER_MODE: AtomicU8 = AtomicU8::new(0); // 0 = Toggle, 1 = Hold
 static WAS_DOWN: AtomicBool = AtomicBool::new(false);
 static LAST_MS: AtomicU64 = AtomicU64::new(0);
-static TX: OnceLock<Mutex<Option<mpsc::SyncSender<()>>>> = OnceLock::new();
+static TX: OnceLock<Mutex<Option<mpsc::SyncSender<HotkeyEvent>>>> = OnceLock::new();
 
-pub fn listen() -> mpsc::Receiver<()> {
-    let (tx, rx) = mpsc::sync_channel(8);
+pub fn set_hotkey_code(code: i64) {
+    TARGET_KEYCODE.store(code, Ordering::Relaxed);
+    WAS_DOWN.store(false, Ordering::Relaxed);
+}
+
+pub fn set_trigger_mode(mode: TriggerMode) {
+    let val = match mode {
+        TriggerMode::Toggle => 0,
+        TriggerMode::Hold => 1,
+    };
+    TRIGGER_MODE.store(val, Ordering::Relaxed);
+    WAS_DOWN.store(false, Ordering::Relaxed);
+}
+
+pub fn is_accessibility_trusted() -> bool {
+    unsafe { AXIsProcessTrusted() }
+}
+
+pub fn is_tap_active() -> bool {
+    TAP_ACTIVE.load(Ordering::Relaxed)
+}
+
+pub fn listen(initial_code: i64, initial_mode: TriggerMode) -> mpsc::Receiver<HotkeyEvent> {
+    set_hotkey_code(initial_code);
+    set_trigger_mode(initial_mode);
+    let (tx, rx) = mpsc::sync_channel(16);
     TX.get_or_init(|| Mutex::new(None))
         .lock()
         .expect("hotkey sender")
@@ -42,15 +108,25 @@ unsafe fn run_loop() {
             std::ptr::null_mut(),
         );
         if tap.is_null() {
+            TAP_ACTIVE.store(false, Ordering::Relaxed);
             eprintln!("热键监听没有启动。请在系统设置的辅助功能里允许 OpenTypeless。");
             return;
         }
         TAP.store(tap, Ordering::Relaxed);
+        TAP_ACTIVE.store(true, Ordering::Relaxed);
         let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
         let run_loop = CFRunLoopGetCurrent();
         CFRunLoopAddSource(run_loop, source, kCFRunLoopCommonModes);
         CGEventTapEnable(tap, true);
         CFRunLoopRun();
+    }
+}
+
+fn flag_for_keycode(code: i64) -> (u64, u64) {
+    match code {
+        KEY_RIGHT_COMMAND => (COMMAND, ALT | SHIFT | CONTROL),
+        KEY_FN => (SECONDARY_FN, ALT | SHIFT | CONTROL | COMMAND),
+        _ => (ALT, SHIFT | CONTROL | COMMAND),
     }
 }
 
@@ -72,31 +148,50 @@ extern "C" fn tap_callback(
             return event;
         }
         let code = CGEventGetIntegerValueField(event, KEYCODE_FIELD);
-        let flags = CGEventGetFlags(event);
-        if code != RIGHT_OPTION {
+        let target_code = TARGET_KEYCODE.load(Ordering::Relaxed);
+        if code != target_code {
             return event;
         }
-        let down = flags & ALT != 0;
-        let other = flags & (SHIFT | CONTROL | COMMAND) != 0;
+        let flags = CGEventGetFlags(event);
+        let (target_flag, forbidden_flags) = flag_for_keycode(target_code);
+        let down = flags & target_flag != 0;
+        let other = flags & forbidden_flags != 0;
         let was_down = WAS_DOWN.swap(down, Ordering::Relaxed);
-        if down && !was_down && !other {
+        let is_hold = TRIGGER_MODE.load(Ordering::Relaxed) == 1;
+
+        if is_hold {
+            if down && !was_down && !other {
+                emit(HotkeyEvent::HoldStart);
+            } else if !down && was_down {
+                emit(HotkeyEvent::HoldStop);
+            }
+        } else if down && !was_down && !other {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
             let last = LAST_MS.swap(now, Ordering::Relaxed);
-            if now.saturating_sub(last) > 250 {
-                if let Some(slot) = TX.get() {
-                    if let Ok(guard) = slot.lock() {
-                        if let Some(tx) = guard.as_ref() {
-                            let _ = tx.try_send(());
-                        }
-                    }
-                }
+            if now.saturating_sub(last) > 220 {
+                emit(HotkeyEvent::Toggle);
             }
         }
         event
     }
+}
+
+fn emit(ev: HotkeyEvent) {
+    if let Some(slot) = TX.get() {
+        if let Ok(guard) = slot.lock() {
+            if let Some(tx) = guard.as_ref() {
+                let _ = tx.try_send(ev);
+            }
+        }
+    }
+}
+
+#[link(name = "ApplicationServices", kind = "framework")]
+unsafe extern "C" {
+    fn AXIsProcessTrusted() -> bool;
 }
 
 #[link(name = "CoreGraphics", kind = "framework")]

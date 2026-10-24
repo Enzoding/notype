@@ -20,11 +20,14 @@ use gpui_kit::{
 use session::{Session, SettingsView};
 
 fn main() {
-    application().with_assets(assets::Assets).run(|cx| {
+    application().with_assets(assets::AllAssets).run(|cx| {
         init(cx);
 
         let session = cx.new(|cx| Session::new(cx));
-        let show_dock = session.read(cx).show_dock;
+        let (show_dock, initial_code, initial_mode) = {
+            let s = session.read(cx);
+            (s.show_dock, s.hotkey_code, s.trigger_mode)
+        };
         cx.set_activation_policy(if show_dock {
             ActivationPolicy::Regular
         } else {
@@ -43,26 +46,26 @@ fn main() {
 
         let events = session.clone();
         cx.spawn(async move |cx| {
-            let hotkeys = hotkey::listen();
+            let hotkeys = hotkey::listen(initial_code, initial_mode);
             loop {
                 cx.background_executor()
-                    .timer(Duration::from_millis(40))
+                    .timer(Duration::from_millis(25))
                     .await;
-                let mut toggles = 0usize;
-                while hotkeys.try_recv().is_ok() {
-                    toggles += 1;
+                let mut hk_events = Vec::new();
+                while let Ok(ev) = hotkeys.try_recv() {
+                    hk_events.push(ev);
                 }
                 let mut menu_ids = Vec::new();
                 while let Ok(event) = tray_icon::menu::MenuEvent::receiver().try_recv() {
                     menu_ids.push(event.id.0);
                 }
-                if toggles == 0 && menu_ids.is_empty() {
+                if hk_events.is_empty() && menu_ids.is_empty() {
                     continue;
                 }
                 let events = events.clone();
                 settings = cx.update(|cx| {
-                    if toggles > 0 {
-                        events.update(cx, |session, cx| session.toggle(cx));
+                    for ev in hk_events {
+                        events.update(cx, |session, cx| session.handle_hotkey_event(ev, cx));
                     }
                     for id in menu_ids {
                         match id.as_str() {
@@ -88,17 +91,45 @@ fn main() {
 }
 
 fn open_settings(cx: &mut App, session: gpui_kit::Entity<Session>) -> AnyWindowHandle {
-    let (window, _) = open_window(settings_options(cx), cx, |window, cx| {
+    let initial_prompt = session.read(cx).custom_prompt.clone();
+    let (window, _) = open_window(settings_options(cx), cx, move |window, cx| {
         gpui_kit::component::Theme::change(window.appearance(), Some(window), cx);
         let key_input = cx.new(|cx| {
             gpui_kit::component::input::InputState::new(window, cx).placeholder("vck_…")
         });
         let phrase_input = cx.new(|cx| {
-            gpui_kit::component::input::InputState::new(window, cx).placeholder("例如 OpenTypeless")
+            gpui_kit::component::input::InputState::new(window, cx)
+                .placeholder("输入专有名词（支持逗号分隔批量添加），如 OpenTypeless, GPUI")
         });
-        cx.new(|cx| SettingsView::new(session.clone(), key_input, phrase_input, cx))
+        let studio_input = cx.new(|cx| {
+            gpui_kit::component::input::InputState::new(window, cx)
+                .placeholder("在此输入或粘贴一段口语草稿，或点击上方「示例草稿」测试润色效果…")
+        });
+        let history_search_input = cx.new(|cx| {
+            gpui_kit::component::input::InputState::new(window, cx)
+                .placeholder("搜索历史口述内容或应用名…")
+        });
+        let custom_prompt_input = cx.new(|cx| {
+            let mut st = gpui_kit::component::input::InputState::new(window, cx)
+                .placeholder("例如：尽量精炼简短，遇到多项内容使用列表排版…");
+            if !initial_prompt.is_empty() {
+                st.set_value(&initial_prompt, window, cx);
+            }
+            st
+        });
+        cx.new(|cx| {
+            SettingsView::new(
+                session.clone(),
+                key_input,
+                phrase_input,
+                studio_input,
+                history_search_input,
+                custom_prompt_input,
+                cx,
+            )
+        })
     })
-    .expect("设置窗口没有打开");
+    .expect("主工作台窗口没有打开");
     overlay::prepare_settings_window();
     window
 }
@@ -131,31 +162,28 @@ fn reveal_settings(
 }
 
 fn settings_options(cx: &mut App) -> WindowOptions {
-    let bounds = Bounds::centered(None, size(px(520.0), px(640.0)), cx);
+    let bounds = Bounds::centered(None, size(px(920.0), px(650.0)), cx);
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {
             title: Some("OpenTypeless".into()),
+            appears_transparent: true,
             ..Default::default()
         }),
         focus: true,
         show: true,
         is_resizable: true,
-        window_min_size: Some(size(px(480.0), px(560.0))),
+        window_min_size: Some(size(px(780.0), px(540.0))),
         ..Default::default()
     }
 }
 
 fn voice_options(cx: &App) -> WindowOptions {
-    // The window is bigger than the pill: the pill sizes itself to its content
-    // and stays centred at the bottom, so switching states never resizes the
-    // window itself.
-    let width = px(520.0);
+    let width = px(580.0);
     let height = px(120.0);
     let origin = cx
         .primary_display()
         .map(|display| {
-            // visible_bounds already excludes the menu bar and the Dock.
             let bounds = display.visible_bounds();
             point(
                 bounds.origin.x + (bounds.size.width - width) / 2.0,
@@ -185,13 +213,13 @@ fn voice_options(cx: &App) -> WindowOptions {
 }
 
 fn install_tray() -> Option<tray_icon::TrayIcon> {
-    use tray_icon::menu::{Menu, MenuItem};
     use tray_icon::TrayIconBuilder;
+    use tray_icon::menu::{Menu, MenuItem};
     let menu = Menu::new();
-    let show = MenuItem::with_id("show", "打开设置", true, None);
-    let toggle = MenuItem::with_id("toggle", "开始或停止", true, None);
+    let show = MenuItem::with_id("show", "打开工作台", true, None);
+    let toggle = MenuItem::with_id("toggle", "开始或停止口述", true, None);
     let dock = MenuItem::with_id("dock", "切换 Dock 图标", true, None);
-    let quit = MenuItem::with_id("quit", "退出", true, None);
+    let quit = MenuItem::with_id("quit", "退出 OpenTypeless", true, None);
     menu.append(&show).ok()?;
     menu.append(&toggle).ok()?;
     menu.append(&dock).ok()?;

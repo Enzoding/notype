@@ -1,4 +1,76 @@
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
+
 const TARGET_RATE: u32 = 16_000;
+
+static ACTIVE_PLAYER: Mutex<Option<(i64, Child)>> = Mutex::new(None);
+
+#[derive(Clone, Copy, Debug)]
+pub enum SoundCue {
+    Start,
+    Stop,
+    Done,
+    Error,
+}
+
+pub fn play_cue(cue: SoundCue) {
+    let (file, vol) = match cue {
+        SoundCue::Start => ("/System/Library/Sounds/Tink.aiff", "0.35"),
+        SoundCue::Stop => ("/System/Library/Sounds/Pop.aiff", "0.35"),
+        SoundCue::Done => ("/System/Library/Sounds/Glass.aiff", "0.30"),
+        SoundCue::Error => ("/System/Library/Sounds/Basso.aiff", "0.35"),
+    };
+    if Path::new(file).exists() {
+        let _ = Command::new("afplay")
+            .args(["-v", vol, file])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+    }
+}
+
+pub fn play_wav(id: i64, path: &Path) -> Result<(), String> {
+    stop_wav();
+    if !path.is_file() {
+        return Err("录音文件不存在".into());
+    }
+    let child = Command::new("afplay")
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|err| format!("无法播放录音：{err}"))?;
+    if let Ok(mut guard) = ACTIVE_PLAYER.lock() {
+        *guard = Some((id, child));
+    }
+    Ok(())
+}
+
+pub fn stop_wav() {
+    if let Ok(mut guard) = ACTIVE_PLAYER.lock() {
+        if let Some((_, mut child)) = guard.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+pub fn playing_id() -> Option<i64> {
+    if let Ok(mut guard) = ACTIVE_PLAYER.lock() {
+        if let Some((id, child)) = guard.as_mut() {
+            match child.try_wait() {
+                Ok(None) => return Some(*id),
+                _ => {
+                    *guard = None;
+                }
+            }
+        }
+    }
+    None
+}
 
 pub struct Recorded {
     pub samples: Vec<f32>,

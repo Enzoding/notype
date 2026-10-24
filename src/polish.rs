@@ -6,22 +6,162 @@ pub enum PolishMode {
     Chat,
 }
 
+impl PolishMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PolishMode::Prose => "prose",
+            PolishMode::Literal => "literal",
+            PolishMode::Email => "email",
+            PolishMode::Chat => "chat",
+        }
+    }
+
+    pub fn from_str(raw: &str) -> Option<Self> {
+        match raw {
+            "prose" => Some(PolishMode::Prose),
+            "literal" => Some(PolishMode::Literal),
+            "email" => Some(PolishMode::Email),
+            "chat" => Some(PolishMode::Chat),
+            _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            PolishMode::Prose => "流畅正文",
+            PolishMode::Literal => "代码与终端",
+            PolishMode::Email => "商务邮件",
+            PolishMode::Chat => "即时通讯",
+        }
+    }
+
+    pub fn short_label(self) -> &'static str {
+        match self {
+            PolishMode::Prose => "正文",
+            PolishMode::Literal => "代码",
+            PolishMode::Email => "邮件",
+            PolishMode::Chat => "聊天",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            PolishMode::Prose => "去除口癖与重复，按语意分段或分点，适合文档、笔记与通用写作。",
+            PolishMode::Literal => "精准保留代码标识符、命令与路径，只清理语气词并补全标点。",
+            PolishMode::Email => "整理为可直接发送的得体邮件正文，行动项自动归纳为清晰列表。",
+            PolishMode::Chat => "保持自然口吻与简短句式，一两句话直达重点，适合微信、Slack 与飞书。",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PolishOptions {
+    pub mode: PolishMode,
+    pub custom_prompt: String,
+    pub space_cjk: bool,
+}
+
+impl Default for PolishOptions {
+    fn default() -> Self {
+        Self {
+            mode: PolishMode::Prose,
+            custom_prompt: String::new(),
+            space_cjk: true,
+        }
+    }
+}
+
+pub fn resolve_mode(strategy: &str, bundle_id: &str) -> Option<PolishMode> {
+    match strategy {
+        "raw" => None,
+        "prose" => Some(PolishMode::Prose),
+        "literal" => Some(PolishMode::Literal),
+        "email" => Some(PolishMode::Email),
+        "chat" => Some(PolishMode::Chat),
+        _ => Some(mode_for_bundle(bundle_id)),
+    }
+}
+
+pub fn friendly_app_name(bundle_id: &str) -> String {
+    let b = bundle_id.trim();
+    if b.is_empty() || b == "unknown" {
+        return "当前应用".into();
+    }
+    if b == "opentypeless.studio" {
+        return "演练台".into();
+    }
+    const KNOWN: &[(&str, &str)] = &[
+        ("com.apple.dt.Xcode", "Xcode"),
+        ("com.microsoft.VSCode", "VS Code"),
+        ("com.todesktop.230313mzl4w4u92", "Cursor"),
+        ("com.todesktop.", "Cursor"),
+        ("dev.zed.Zed", "Zed"),
+        ("com.apple.Terminal", "终端"),
+        ("com.googlecode.iterm2", "iTerm2"),
+        ("dev.warp.Warp", "Warp"),
+        ("com.mitchellh.ghostty", "Ghostty"),
+        ("com.apple.mail", "邮件"),
+        ("com.microsoft.Outlook", "Outlook"),
+        ("com.readdle.smartemail-Mac", "Spark"),
+        ("com.mimestream.Mimestream", "Mimestream"),
+        ("com.tinyspeck.slackmacgap", "Slack"),
+        ("com.tencent.xinWeChat", "微信"),
+        ("net.whatsapp.WhatsApp", "WhatsApp"),
+        ("com.apple.MobileSMS", "信息"),
+        ("ru.keepcoder.Telegram", "Telegram"),
+        ("com.hnc.Discord", "Discord"),
+        ("com.electron.lark", "飞书"),
+        ("com.alibaba.DingTalkMac", "钉钉"),
+        ("com.apple.Notes", "备忘录"),
+        ("notion.id", "Notion"),
+        ("md.obsidian", "Obsidian"),
+        ("com.apple.Safari", "Safari"),
+        ("com.google.Chrome", "Chrome"),
+        ("company.thebrowser.Browser", "Arc"),
+        ("com.brave.Browser", "Brave"),
+        ("com.apple.finder", "Finder"),
+    ];
+    for (prefix, name) in KNOWN {
+        if b == *prefix || b.starts_with(prefix) {
+            return (*name).to_string();
+        }
+    }
+    b.rsplit('.')
+        .next()
+        .filter(|part| !part.is_empty())
+        .unwrap_or(b)
+        .to_string()
+}
+
 pub fn mode_for_bundle(bundle_id: &str) -> PolishMode {
     const LITERAL_PREFIXES: &[&str] = &[
         "com.apple.dt.Xcode",
         "com.microsoft.VSCode",
         "com.todesktop.",
+        "dev.zed.Zed",
+        "com.jetbrains.",
         "com.apple.Terminal",
         "com.googlecode.iterm2",
         "dev.warp.Warp",
         "com.mitchellh.ghostty",
+        "org.alacritty",
+        "net.kovidgoyal.kitty",
     ];
-    const EMAIL: &[&str] = &["com.apple.mail", "com.microsoft.Outlook"];
+    const EMAIL: &[&str] = &[
+        "com.apple.mail",
+        "com.microsoft.Outlook",
+        "com.readdle.smartemail-Mac",
+        "com.mimestream.Mimestream",
+    ];
     const CHAT: &[&str] = &[
         "com.tinyspeck.slackmacgap",
         "com.tencent.xinWeChat",
         "net.whatsapp.WhatsApp",
         "com.apple.MobileSMS",
+        "ru.keepcoder.Telegram",
+        "com.hnc.Discord",
+        "com.electron.lark",
+        "com.alibaba.DingTalkMac",
     ];
     if LITERAL_PREFIXES.iter().any(|id| bundle_id.starts_with(id)) {
         PolishMode::Literal
@@ -34,9 +174,22 @@ pub fn mode_for_bundle(bundle_id: &str) -> PolishMode {
     }
 }
 
+#[allow(dead_code)]
 pub fn messages(transcript: &str, bundle_id: &str, phrases: &[String]) -> (String, String) {
-    let mode = mode_for_bundle(bundle_id);
-    let mode_rule = match mode {
+    let options = PolishOptions {
+        mode: mode_for_bundle(bundle_id),
+        custom_prompt: String::new(),
+        space_cjk: false,
+    };
+    messages_with_options(transcript, phrases, &options)
+}
+
+pub fn messages_with_options(
+    transcript: &str,
+    phrases: &[String],
+    options: &PolishOptions,
+) -> (String, String) {
+    let mode_rule = match options.mode {
         PolishMode::Literal => {
             "The frontmost app is a code editor or terminal. Remove fillers and repeats, add punctuation, and apply the glossary. Do not rewrite code, commands, identifiers, or paths into prose."
         }
@@ -48,7 +201,7 @@ pub fn messages(transcript: &str, bundle_id: &str, phrases: &[String]) -> (Strin
         }
         PolishMode::Prose => {
             "Turn spoken words into text people can read. Do not leave the transcript verbatim. Remove fillers, repeats, and unfinished fragments. Split into paragraphs by meaning. When the speaker gives steps, a comparison, or several requests, use a list."
-        },
+        }
     };
     let glossary = if phrases.is_empty() {
         "No extra glossary.".to_string()
@@ -59,6 +212,16 @@ pub fn messages(transcript: &str, bundle_id: &str, phrases: &[String]) -> (Strin
             .collect::<Vec<_>>()
             .join("\n");
         format!("Keep these spellings exactly:\n{lines}")
+    };
+    let spacing_rule = if options.space_cjk {
+        "\nSpacing: insert a single space between Chinese characters and Latin letters/numbers (e.g. '使用 Rust 开发 macOS 应用')."
+    } else {
+        ""
+    };
+    let custom_rule = if options.custom_prompt.trim().is_empty() {
+        String::new()
+    } else {
+        format!("\nUser preference: {}", options.custom_prompt.trim())
     };
     let system = format!(
         "You edit a speech transcript into text the speaker can send or keep. \
@@ -78,7 +241,7 @@ Do not add facts, dates, names, numbers, links, or opinions the speaker did not 
 Keep names, code, URLs, and glossary spellings exactly. \
 Do not convert currencies, units, calendars, or number formats.\n\
 {mode_rule}\n\
-{glossary}"
+{glossary}{spacing_rule}{custom_rule}"
     );
     (system, transcript.to_string())
 }

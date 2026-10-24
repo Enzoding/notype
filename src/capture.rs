@@ -22,6 +22,28 @@ pub fn wave() -> [f32; WAVE_BARS] {
     WAVE.lock().map(|bars| *bars).unwrap_or([0.0; WAVE_BARS])
 }
 
+pub fn default_device_name() -> String {
+    cpal::default_host()
+        .default_input_device()
+        .and_then(|d| d.name().ok())
+        .unwrap_or_else(|| "系统默认麦克风".into())
+}
+
+pub fn list_input_devices() -> Vec<String> {
+    let host = cpal::default_host();
+    let mut out = Vec::new();
+    if let Ok(devices) = host.input_devices() {
+        for dev in devices {
+            if let Ok(name) = dev.name() {
+                if !name.trim().is_empty() && !out.contains(&name) {
+                    out.push(name);
+                }
+            }
+        }
+    }
+    out
+}
+
 pub struct ActiveRecording {
     stream: Stream,
     samples: Arc<Mutex<Vec<f32>>>,
@@ -31,11 +53,21 @@ pub struct ActiveRecording {
 }
 
 impl ActiveRecording {
-    pub fn start() -> Result<Self, String> {
+    pub fn start_with_device(preferred: Option<&str>) -> Result<Self, String> {
         let host = cpal::default_host();
-        let device = host
-            .default_input_device()
+        let device = preferred
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .and_then(|name| {
+                host.input_devices().ok()?.find(|dev| {
+                    dev.name()
+                        .map(|n| n.trim() == name)
+                        .unwrap_or(false)
+                })
+            })
+            .or_else(|| host.default_input_device())
             .ok_or_else(|| "没有找到麦克风".to_string())?;
+
         let config = device
             .default_input_config()
             .map_err(|err| format!("无法打开麦克风：{err}"))?;

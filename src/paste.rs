@@ -23,6 +23,14 @@ impl ClipboardRestore {
     }
 }
 
+pub fn copy_to_clipboard(text: &str) -> bool {
+    write_clipboard(text).is_ok()
+}
+
+pub fn read_from_clipboard() -> Option<String> {
+    read_clipboard()
+}
+
 pub fn insert_text(text: &str) -> (InsertResult, Option<ClipboardRestore>) {
     if secure_input() {
         let _ = write_clipboard(text);
