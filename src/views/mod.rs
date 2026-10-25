@@ -46,6 +46,9 @@ impl NavTab {
     }
 }
 
+pub const DEFAULT_HISTORY_LIMIT: usize = 25;
+pub const DEFAULT_DICT_LIMIT: usize = 50;
+
 pub struct SettingsView {
     pub(crate) session: Entity<Session>,
     pub active_tab: NavTab,
@@ -63,6 +66,8 @@ pub struct SettingsView {
     pub studio_fix_open: bool,
     pub copied_token: Option<String>,
     pub confirm_clear_history: bool,
+    pub history_display_limit: usize,
+    pub dict_display_limit: usize,
 }
 
 impl SettingsView {
@@ -132,6 +137,8 @@ impl SettingsView {
             studio_fix_open: false,
             copied_token: None,
             confirm_clear_history: false,
+            history_display_limit: DEFAULT_HISTORY_LIMIT,
+            dict_display_limit: DEFAULT_DICT_LIMIT,
         }
     }
 

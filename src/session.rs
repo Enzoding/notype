@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -111,6 +112,7 @@ pub struct Session {
     pub mining: bool,
     pub mining_status: String,
     pub last_mined_at: i64,
+    pub audio_ids: HashSet<i64>,
     pub history: Vec<HistoryItem>,
     pub stats: StatsSummary,
     pub active_bundle: String,
@@ -147,6 +149,7 @@ impl Session {
         let last_mined_at = store.last_mined_at();
         let last_mine_error = store.last_mine_error();
         let history = store.history().unwrap_or_default();
+        let audio_ids = Store::existing_audio_ids();
         let stats = store.stats();
         let show_dock = store.show_dock();
         let hotkey_code = store.hotkey_code();
@@ -192,6 +195,7 @@ impl Session {
                 format!("上次学习失败：{}", truncate_text(&last_mine_error, 80))
             },
             last_mined_at,
+            audio_ids,
             history,
             stats,
             active_bundle: String::new(),
@@ -503,6 +507,7 @@ impl Session {
             audio::stop_wav();
             self.playing_id = None;
         }
+        self.audio_ids.remove(&id);
         if let Ok(store) = self.store.lock() {
             let _ = store.delete_history(id);
             self.history = store.history().unwrap_or_default();
@@ -514,6 +519,7 @@ impl Session {
     pub fn clear_history(&mut self, cx: &mut Context<Self>) {
         audio::stop_wav();
         self.playing_id = None;
+        self.audio_ids.clear();
         if let Ok(store) = self.store.lock() {
             let _ = store.clear_history();
             self.history = Vec::new();
@@ -1273,7 +1279,9 @@ impl Session {
                 {
                     inserted_row = Some(row_id);
                     if self.save_audio && !wav.is_empty() {
-                        let _ = store.save_audio_file(row_id, wav);
+                        if store.save_audio_file(row_id, wav).is_ok() {
+                            self.audio_ids.insert(row_id);
+                        }
                     }
                 }
                 self.history = store.history().unwrap_or_default();

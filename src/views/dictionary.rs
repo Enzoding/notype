@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use gpui_kit::component::Sizable;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::component::input::Input;
@@ -43,6 +45,17 @@ impl SettingsView {
         } else {
             "还没有学习过".to_string()
         };
+
+        let existing_phrases: HashSet<String> = phrases
+            .iter()
+            .map(|p| p.phrase.to_lowercase())
+            .collect();
+
+        let total_phrases = phrases.len();
+        let display_limit = self.dict_display_limit;
+        let to_display = total_phrases.min(display_limit);
+        let has_more = total_phrases > to_display;
+        let displayed_phrases: Vec<_> = phrases.iter().take(to_display).cloned().collect();
 
         div()
             .flex()
@@ -482,7 +495,7 @@ impl SettingsView {
                             )
                             .children(PRESET_PHRASES.iter().enumerate().map(|(idx, word)| {
                                 let word_str = *word;
-                                let exists = phrases.iter().any(|p| p.phrase.eq_ignore_ascii_case(word_str));
+                                let exists = existing_phrases.contains(&word_str.to_lowercase());
                                 let s = session_handle.clone();
                                 div()
                                     .id(SharedString::from(format!("preset-phrase-{idx}")))
@@ -529,14 +542,14 @@ impl SettingsView {
                     .child(
                         ui::section_label(
                             "已启用词条",
-                            Some(format!("共 {} 项 · 前 {} 项参与识别", phrases.len(), crate::mining::ACTIVE_PHRASE_LIMIT)),
+                            Some(format!("共 {} 项 · 前 {} 项参与识别", total_phrases, crate::mining::ACTIVE_PHRASE_LIMIT)),
                         )
                         .text_color(ui::fg2(cx))
                         .justify_between(),
                     )
                     .child(
                         ui::card(cx)
-                            .when(phrases.is_empty(), |card| {
+                            .when(displayed_phrases.is_empty(), |card| {
                                 card.child(empty_state(
                                     IconName::BookOpen,
                                     "词库还是空的",
@@ -545,24 +558,75 @@ impl SettingsView {
                                 ))
                             })
                             .children({
-                                let count = phrases.len();
+                                let count = displayed_phrases.len();
                                 let session = session_handle.clone();
                                 let hairline = ui::hairline(cx);
                                 let hover = ui::card_hover(cx);
                                 let dim = ui::fg2(cx);
-                                phrases.into_iter().enumerate().map(move |(index, phrase)| {
+                                displayed_phrases.into_iter().enumerate().map(move |(index, phrase)| {
                                     phrase_row(
                                         phrase.id,
                                         phrase.phrase,
                                         phrase.source,
                                         phrase.hits,
-                                        index + 1 == count,
+                                        !has_more && index + 1 == count,
                                         session.clone(),
                                         hairline,
                                         hover,
                                         dim,
                                     )
                                 })
+                            })
+                            .when(has_more, |card| {
+                                let v_more = view.clone();
+                                let v_all = view.clone();
+                                card.child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .px(px(14.0))
+                                        .py(px(10.0))
+                                        .bg(ui::well_bg(cx))
+                                        .child(
+                                            div()
+                                                .text_size(rems(0.75))
+                                                .text_color(ui::fg3(cx))
+                                                .child(format!(
+                                                    "已显示前 {to_display} 项，共 {total_phrases} 项词条"
+                                                )),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(8.0))
+                                                .child(button(
+                                                    "load-more-phrases",
+                                                    "加载更多 (+50)",
+                                                    false,
+                                                    move |_, cx| {
+                                                        v_more.update(cx, |view, cx| {
+                                                            view.dict_display_limit = view
+                                                                .dict_display_limit
+                                                                .saturating_add(50);
+                                                            cx.notify();
+                                                        });
+                                                    },
+                                                ))
+                                                .child(button(
+                                                    "show-all-phrases",
+                                                    "显示全部",
+                                                    false,
+                                                    move |_, cx| {
+                                                        v_all.update(cx, |view, cx| {
+                                                            view.dict_display_limit = usize::MAX;
+                                                            cx.notify();
+                                                        });
+                                                    },
+                                                )),
+                                        ),
+                                )
                             }),
                     ),
             )

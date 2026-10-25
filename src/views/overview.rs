@@ -11,7 +11,6 @@ use gpui_kit::{
 use crate::paste;
 use crate::polish::PolishMode;
 use crate::session::{Phase, format_duration_ms};
-use crate::store::Store;
 use crate::ui;
 use crate::views::SettingsView;
 use crate::views::components::{
@@ -45,6 +44,7 @@ impl SettingsView {
             studio_busy,
             studio_dictating,
             playing_id,
+            audio_ids,
         ) = {
             let s = self.session.read(cx);
             (
@@ -64,6 +64,7 @@ impl SettingsView {
                 s.studio_busy,
                 s.studio_dictating,
                 s.playing_id,
+                s.audio_ids.clone(),
             )
         };
 
@@ -71,7 +72,6 @@ impl SettingsView {
         let correction_input = self.correction_input.clone();
         let editing_history_id = self.editing_history_id;
         let repolishing_id = self.session.read(cx).repolishing_id;
-        let audio_dir = Store::data_dir().unwrap_or_default().join("audio");
 
         let strategy_label = match polish_strategy.as_str() {
             "prose" => "固定：流畅正文",
@@ -577,9 +577,9 @@ impl SettingsView {
                                 let v = view.clone();
                                 let copied = copied_token.clone();
                                 let exp_ids = expanded_ids.clone();
-                                let a_dir = audio_dir.clone();
+                                let a_ids = audio_ids.clone();
                                 recent_history.into_iter().enumerate().map(move |(idx, item)| {
-                                    let has_audio = a_dir.join(format!("{}.wav", item.id)).is_file();
+                                    let has_audio = a_ids.contains(&item.id);
                                     let is_playing = playing_id == Some(item.id);
                                     let is_expanded = exp_ids.contains(&item.id);
                                     let is_repolishing = repolishing_id == Some(item.id);

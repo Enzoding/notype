@@ -1268,9 +1268,10 @@ pub fn phrase_row(
     dim: Hsla,
 ) -> impl IntoElement {
     let accessible = format!("删除 {label}");
+    let group_id = SharedString::from(format!("phrase-row-{id}"));
     div()
         .id(SharedString::from(format!("phrase-{id}")))
-        .group("phrase-row")
+        .group(group_id.clone())
         .flex()
         .items_center()
         .gap(px(12.0))
@@ -1309,7 +1310,7 @@ pub fn phrase_row(
                 .size(px(22.0))
                 .rounded(px(6.0))
                 .opacity(0.35)
-                .group_hover("phrase-row", |style| style.opacity(0.95))
+                .group_hover(group_id, |style| style.opacity(0.95))
                 .cursor_pointer()
                 .hover(move |style| style.bg(hover))
                 .aria_label(accessible)

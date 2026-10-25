@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -373,6 +374,28 @@ impl Store {
             params![key, value],
         )?;
         Ok(())
+    }
+
+    pub fn audio_dir() -> Result<PathBuf> {
+        Ok(Self::data_dir()?.join("audio"))
+    }
+
+    pub fn existing_audio_ids() -> HashSet<i64> {
+        let mut ids = HashSet::new();
+        if let Ok(dir) = Self::audio_dir() {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        if let Some(stem) = name.strip_suffix(".wav") {
+                            if let Ok(id) = stem.parse::<i64>() {
+                                ids.insert(id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        ids
     }
 
     pub fn audio_path(&self, id: i64) -> PathBuf {
@@ -1028,6 +1051,13 @@ mod tests {
         let id = store.phrases().unwrap()[0].id;
         store.delete_phrase(id).unwrap();
         assert!(store.corrections().is_empty());
+    }
+
+    #[test]
+    fn audio_dir_resolves_and_ids_scan_gracefully() {
+        let dir = Store::audio_dir().unwrap();
+        assert!(dir.ends_with("audio"));
+        let _ = Store::existing_audio_ids();
     }
 }
 
