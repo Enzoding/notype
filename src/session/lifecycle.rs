@@ -122,6 +122,7 @@ impl Session {
         if matches!(self.phase, Phase::Working(_)) {
             self.generation = self.generation.wrapping_add(1);
             self.stages = None;
+            self.working_progress = 0.0;
             self.level = 0.0;
             self.wave = [0.0; crate::capture::WAVE_BARS];
             self.note(Notice::Warn("已取消".into()), cx);
@@ -250,6 +251,7 @@ impl Session {
         self.exiting = false;
         self.appearance = self.appearance.wrapping_add(1);
         self.phase = Phase::Working(Stage::Transcribe);
+        self.working_progress = 0.08;
         self.sync_voice(cx);
         cx.notify();
 
@@ -305,6 +307,7 @@ impl Session {
         cx: &mut Context<Self>,
     ) {
         self.stages = None;
+        self.working_progress = 1.0;
         let mut inserted_text = String::new();
         let mut pasted = false;
         let mut inserted_row = None;
@@ -494,6 +497,24 @@ impl Session {
                             }
                             if connected {
                                 session.stages = Some(receiver);
+                            }
+                        }
+                        if let Phase::Working(stage) = session.phase {
+                            let target = match stage {
+                                Stage::Transcribe => 0.48,
+                                Stage::Polish => 0.88,
+                                Stage::Insert => 0.98,
+                            };
+                            if session.working_progress < target {
+                                let diff = target - session.working_progress;
+                                let step = (diff * 0.08).max(0.003);
+                                session.working_progress =
+                                    (session.working_progress + step).min(target);
+                                changed = true;
+                            } else if session.working_progress < 0.96 {
+                                session.working_progress =
+                                    (session.working_progress + 0.0008).min(0.96);
+                                changed = true;
                             }
                         }
                         if changed {

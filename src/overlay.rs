@@ -13,7 +13,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSPoint, NSString};
 
-use crate::session::{Notice, Phase, Session, Stage, mmss};
+use crate::session::{Notice, Phase, Session, mmss};
 use crate::views::components::ellipsize;
 
 const VOICE_TITLE: &str = "OpenTypeless Voice";
@@ -146,12 +146,13 @@ impl OverlayView {
 
 impl Render for OverlayView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (phase, wave, elapsed, appearance, exiting) = {
+        let (phase, wave, elapsed, progress, appearance, exiting) = {
             let session = self.session.read(cx);
             (
                 session.phase.clone(),
                 session.wave,
                 session.elapsed(),
+                session.working_progress,
                 session.appearance,
                 session.exiting,
             )
@@ -160,7 +161,7 @@ impl Render for OverlayView {
         let content = match &phase {
             Phase::Idle => div(),
             Phase::Listening => listening_view(wave, elapsed),
-            Phase::Working(stage) => working_view(*stage),
+            Phase::Working(_) => working_view(progress),
             Phase::Message(notice) => message_view(notice),
         };
 
@@ -261,19 +262,16 @@ fn wave_view(wave: [f32; crate::capture::WAVE_BARS]) -> gpui_kit::Div {
         }))
 }
 
-fn working_view(stage: Stage) -> gpui_kit::Div {
-    let total_width = 160.0;
-    let progress = match stage {
-        Stage::Transcribe => 0.42,
-        Stage::Polish => 0.78,
-        Stage::Insert => 0.96,
-    };
-    let fill_w = total_width * progress;
+fn working_view(progress: f32) -> gpui_kit::Div {
+    let total_width = 168.0;
+    let clamped = progress.clamp(0.04, 1.0);
+    let fill_w = (total_width * clamped).round();
 
     hud_shell()
         .w(px(total_width))
         .overflow_hidden()
         .relative()
+        // Silky smooth background progress fill layer
         .child(
             div()
                 .absolute()
@@ -282,10 +280,14 @@ fn working_view(stage: Stage) -> gpui_kit::Div {
                 .left_0()
                 .w(px(fill_w))
                 .rounded_full()
-                .bg(rgb(0x1c4a3e))
-                .border_r_1()
-                .border_color(rgb(0x34d399).opacity(0.85)),
+                .bg(rgb(0x194d3e))
+                // Glowing leading edge highlight
+                .shadow(vec![
+                    BoxShadow::new(px(2.0), px(0.0), rgb(0x34d399).opacity(0.7).into())
+                        .blur_radius(px(8.0)),
+                ]),
         )
+        // Foreground content with spinner and "处理中"
         .child(
             div()
                 .relative()
@@ -293,6 +295,7 @@ fn working_view(stage: Stage) -> gpui_kit::Div {
                 .size_full()
                 .items_center()
                 .justify_between()
+                .px(px(4.0))
                 .child(
                     div()
                         .flex()
