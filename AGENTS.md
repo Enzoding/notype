@@ -5,11 +5,11 @@
 OpenTypeless is a Rust 2021 macOS dictation application using GPUI Kit. All application code lives in `src/`:
 
 - `main.rs`: startup, windows, tray menu, and event dispatch.
-- `session.rs`: recording lifecycle and transcription → correction → polishing → insertion workflow.
-- `capture.rs`, `audio.rs`, `hotkey.rs`, `paste.rs`, and `ax.rs`: audio and native macOS integration.
+- `session/`: session state and recording lifecycle, divided into domain submodules (`lifecycle`, `settings`, `history`, `mining`, `studio`, `time`, `types`).
+- `capture.rs`, `audio.rs`, `hotkey.rs`, `paste.rs`, `ax.rs`, and `front.rs`: audio, accessibility, clipboard, and frontmost application sensing.
 - `gateway.rs`, `polish.rs`, and `mining.rs`: AI requests, writing modes, and terminology learning.
 - `store.rs` and `secrets.rs`: SQLite persistence and API key configuration.
-- `views/`, `overlay.rs`, and `ui.rs`: workspace screens, floating voice capsule, and shared styling.
+- `views/`, `overlay.rs`, and `ui.rs`: workspace screens, modular UI controls (`views/components/`), floating voice capsule, and shared styling.
 
 Unit tests are embedded beside implementation code. UI assets come from GPUI Kit. `target/` contains ignored build output.
 
@@ -21,8 +21,17 @@ Run on macOS with Rust and Apple developer tools:
 - `cargo build --release --locked`: produce an optimized executable in `target/release/`.
 - `cargo test --locked`: run the unit test suite.
 - `cargo test --locked mining::tests`: run terminology-learning tests only.
-- `cargo fmt --check`: check standard Rust formatting; use `cargo fmt` to apply it.
-- `cargo clippy --all-targets --locked`: inspect compiler and lint diagnostics.
+- `cargo fmt --check`: check standard Rust formatting; use `cargo fmt` to apply it (install via `rustup component add rustfmt` if missing).
+- `cargo clippy --all-targets --locked`: inspect compiler and lint diagnostics (install via `rustup component add clippy` if missing).
+
+## UI Rendering & GPUI Performance Guidelines
+
+OpenTypeless runs at native 60~120Hz display refresh rates on macOS. Uphold these strict UI invariants:
+
+- **Render Purity & Zero Disk I/O**: `Render::render` must be pure memory layout computation. Never perform filesystem calls (`is_file`, `metadata`, `read_dir`) or synchronous I/O inside render paths; maintain indices and presence flags in memory (`Session::audio_ids`, etc.).
+- **GPUI Scroll Loop Awareness**: GPUI's `overflow_y_scroll` triggers `cx.notify` on each scroll offset tick. Avoid deep-cloning large vectors (borrow references where practical) and avoid $O(M \times N)$ linear searches inside render loops (pre-index with `HashSet`).
+- **Dynamic List Pagination**: For unbounded collections like dictation history and vocabulary, limit initial rendering (e.g. 25-50 items) and provide load-more controls to prevent mounting thousands of unvirtualized Flexbox nodes.
+- **GPUI Group Isolation**: When using `group_hover` on list items, every row must use an isolated unique group identifier (`SharedString::from(format!("phrase-row-{id}"))`). Never share a static group name across repeated rows to prevent global window mouse listener storms and Hitbox collisions.
 
 ## Coding Style & Naming Conventions
 
