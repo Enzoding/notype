@@ -26,6 +26,7 @@ impl PolishMode {
         }
     }
 
+    #[allow(dead_code)]
     pub fn label(self) -> &'static str {
         match self {
             PolishMode::Prose => "流畅正文",
@@ -44,6 +45,7 @@ impl PolishMode {
         }
     }
 
+    #[allow(dead_code)]
     pub fn description(self) -> &'static str {
         match self {
             PolishMode::Prose => "去除口癖与重复，按语意分段或分点，适合文档、笔记与通用写作。",

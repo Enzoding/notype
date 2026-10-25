@@ -96,6 +96,7 @@ impl TriggerMode {
         }
     }
 
+    #[allow(dead_code)]
     pub fn label(self) -> &'static str {
         match self {
             Self::Toggle => "单击切换（按一下开始，再按一下完成）",

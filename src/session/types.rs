@@ -24,6 +24,7 @@ impl Stage {
         }
     }
 
+    #[allow(dead_code)]
     pub fn index(self) -> usize {
         match self {
             Stage::Transcribe => 0,

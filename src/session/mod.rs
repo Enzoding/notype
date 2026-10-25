@@ -57,9 +57,13 @@ pub struct Session {
     pub active_bundle: String,
     pub playing_id: Option<i64>,
     pub repolishing_id: Option<i64>,
+    #[allow(dead_code)]
     pub studio_mode: PolishMode,
+    #[allow(dead_code)]
     pub studio_output: String,
+    #[allow(dead_code)]
     pub studio_raw: String,
+    #[allow(dead_code)]
     pub studio_busy: bool,
     pub studio_dictating: bool,
     pub mic_testing: bool,

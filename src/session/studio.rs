@@ -9,6 +9,7 @@ use crate::polish::PolishOptions;
 use super::types::Phase;
 use super::Session;
 
+#[allow(dead_code)]
 impl Session {
     pub fn run_studio_polish(&mut self, input_text: &str, cx: &mut Context<Self>) {
         let input_text = input_text.trim().to_string();

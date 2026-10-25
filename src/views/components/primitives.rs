@@ -155,6 +155,7 @@ pub fn button(
 }
 
 /// White button used on pink and teal feature cards.
+#[allow(dead_code)]
 pub fn button_on_color(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,

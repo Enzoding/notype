@@ -38,7 +38,7 @@ impl NavTab {
 
     pub fn subtitle(self) -> &'static str {
         match self {
-            NavTab::Overview => "实时状态、数据概览与内置润色演练台",
+            NavTab::Overview => "口述数据统计与最近记录概览",
             NavTab::History => "查阅、对比原文、回放录音或重新润色历史口述",
             NavTab::Dictionary => "管理专有名词与术语，转写与润色将严格保持拼写",
             NavTab::Settings => "快捷键、麦克风、润色和连接",
@@ -54,15 +54,18 @@ pub struct SettingsView {
     pub active_tab: NavTab,
     pub(crate) key_input: Entity<InputState>,
     pub(crate) phrase_input: Entity<InputState>,
+    #[allow(dead_code)]
     pub(crate) studio_input: Entity<InputState>,
     pub(crate) history_search_input: Entity<InputState>,
     pub(crate) custom_prompt_input: Entity<InputState>,
     pub(crate) correction_input: Entity<TextareaState>,
+    #[allow(dead_code)]
     pub(crate) studio_fix_input: Entity<TextareaState>,
     pub(crate) key_editing: bool,
     pub history_mode_filter: String,
     pub expanded_raw_ids: Vec<i64>,
     pub editing_history_id: Option<i64>,
+    #[allow(dead_code)]
     pub studio_fix_open: bool,
     pub copied_token: Option<String>,
     pub confirm_clear_history: bool,
@@ -175,6 +178,7 @@ impl SettingsView {
         cx.notify();
     }
 
+    #[allow(dead_code)]
     pub fn begin_studio_fix(
         &mut self,
         text: &str,

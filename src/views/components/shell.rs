@@ -195,6 +195,7 @@ pub fn status_pill(phase: &Phase, elapsed: Duration, cx: &App) -> impl IntoEleme
         )
 }
 
+#[allow(dead_code)]
 pub fn notice_look(notice: &Notice, cx: &App) -> (IconName, Hsla) {
     match notice {
         Notice::Done(_) => (IconName::Check, ui::ok(cx)),

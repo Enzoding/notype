@@ -38,6 +38,7 @@ pub fn fg3(cx: &App) -> Hsla {
 }
 
 /// Running text. `{colors.body}` `#3a3a3a`.
+#[allow(dead_code)]
 pub fn body(cx: &App) -> Hsla {
     ignore(cx);
     rgb(0x3a3a3a).into()
@@ -254,6 +255,7 @@ pub fn sync_controls(cx: &mut App) {
 }
 
 /// The six feature-card fills. Pink and teal take white type; the rest take ink.
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum FeatureFill {
     Pink,
