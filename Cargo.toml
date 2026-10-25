@@ -1,6 +1,6 @@
 [package]
 name = "notype"
-version = "0.1.1"
+version = "0.2.1"
 edition = "2021"
 description = "Local macOS dictation. Record, then transcribe and polish through Vercel AI Gateway."
 publish = false
@@ -13,6 +13,7 @@ path = "src/main.rs"
 anyhow = "1"
 arboard = "3"
 base64 = "0.22"
+block2 = "0.6"
 cpal = "0.15"
 dirs = "6"
 gpui-kit = "0.8"

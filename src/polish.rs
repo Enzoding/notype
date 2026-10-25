@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PolishMode {
     Prose,
     Literal,
@@ -51,12 +51,14 @@ impl PolishMode {
             PolishMode::Prose => "去除口癖与重复，按语意分段或分点，适合文档、笔记与通用写作。",
             PolishMode::Literal => "精准保留代码标识符、命令与路径，只清理语气词并补全标点。",
             PolishMode::Email => "整理为可直接发送的得体邮件正文，行动项自动归纳为清晰列表。",
-            PolishMode::Chat => "保持自然口吻与简短句式，一两句话直达重点，适合微信、Slack 与飞书。",
+            PolishMode::Chat => {
+                "保持自然口吻与简短句式，一两句话直达重点，适合微信、Slack 与飞书。"
+            }
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PolishOptions {
     pub mode: PolishMode,
     pub custom_prompt: String,
@@ -268,7 +270,11 @@ pub fn parse_polished(raw: &str) -> String {
 fn json_text(raw: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(raw).ok()?;
     let text = value.get("text")?.as_str()?.trim();
-    if text.is_empty() { None } else { Some(text.to_string()) }
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_string())
+    }
 }
 
 pub fn max_output_tokens(transcript: &str) -> u32 {
@@ -276,10 +282,41 @@ pub fn max_output_tokens(transcript: &str) -> u32 {
     (chars.saturating_mul(3)).clamp(320, 2000)
 }
 
+/// Bound individual polish calls without dropping Unicode or whitespace at segment boundaries.
+pub fn segments(text: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut chars = 0;
+    for (offset, ch) in text.char_indices() {
+        chars += 1;
+        if chars >= 1000
+            || (chars >= 800 && matches!(ch, '\n' | '。' | '！' | '？' | '.' | '!' | '?'))
+        {
+            let end = offset + ch.len_utf8();
+            parts.push(text[start..end].to_string());
+            start = end;
+            chars = 0;
+        }
+    }
+    if start < text.len() {
+        parts.push(text[start..].to_string());
+    }
+    parts
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn long_polish_segments_preserve_every_character() {
+        let text = "测试 Unicode. 语音\n".repeat(600);
+        let parts = segments(&text);
+        assert!(parts.len() > 1);
+        assert!(parts.iter().all(|p| p.chars().count() <= 1000));
+        assert_eq!(parts.concat(), text);
+        assert!(segments("").is_empty());
+    }
     #[test]
     fn prose_asks_for_structure() {
         let (system, _) = messages("嗯，我想做三件事", "com.apple.Notes", &[]);

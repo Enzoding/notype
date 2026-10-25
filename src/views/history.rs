@@ -3,15 +3,15 @@ use gpui_kit::component::IconName;
 use gpui_kit::component::Sizable;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    App, Context, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, px, rems,
+    div, px, rems, App, Context, ElementId, FontWeight, InteractiveElement, IntoElement,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
 use crate::polish;
 use crate::store::HistoryItem;
 use crate::ui;
-use crate::views::SettingsView;
 use crate::views::components::{button, empty_state, history_card_row};
+use crate::views::SettingsView;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PageItem {

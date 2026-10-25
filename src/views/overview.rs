@@ -2,16 +2,14 @@ use gpui_kit::assets::IconName as LucideIcon;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    Context, InteractiveElement, IntoElement, ParentElement,
-    StatefulInteractiveElement, Styled, div, px, rems,
+    div, px, rems, Context, InteractiveElement, IntoElement, ParentElement,
+    StatefulInteractiveElement, Styled,
 };
 
 use crate::session::format_duration_ms;
 use crate::ui;
+use crate::views::components::{empty_state, history_card_row, metric_card};
 use crate::views::SettingsView;
-use crate::views::components::{
-    button, empty_state, history_card_row, metric_card,
-};
 
 impl SettingsView {
     pub fn render_overview(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -19,15 +17,19 @@ impl SettingsView {
         let session_handle = self.session.clone();
         let copied_token = self.copied_token.clone();
 
-        let (has_key, stats, phrases_len, recent_history, playing_id, audio_ids) = {
+        let (stats, phrases_len, recent_history, playing_id, audio_ids) = {
             let s = self.session.read(cx);
             (
-                s.has_key(),
                 s.stats.clone(),
                 s.phrases.len(),
                 s.history.iter().take(5).cloned().collect::<Vec<_>>(),
                 s.playing_id,
-                s.audio_ids.clone(),
+                s.history
+                    .iter()
+                    .take(5)
+                    .filter(|item| s.audio_ids.contains(&item.id))
+                    .map(|item| item.id)
+                    .collect::<std::collections::HashSet<_>>(),
             )
         };
 
@@ -47,66 +49,7 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(px(28.0))
-            .when(!has_key, |col| {
-                let view_for_btn = view.clone();
-                col.child(
-                    ui::card(cx)
-                        .p(px(16.0))
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap(px(16.0))
-                        .border_1()
-                        .border_color(ui::accent(cx))
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(14.0))
-                                .child(
-                                    div()
-                                        .p(px(10.0))
-                                        .rounded(px(8.0))
-                                        .bg(ui::accent_soft(cx))
-                                        .child(
-                                            Icon::new(LucideIcon::Key)
-                                                .size(px(22.0))
-                                                .text_color(ui::accent(cx)),
-                                        ),
-                                )
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .gap(px(3.0))
-                                        .child(
-                                            div()
-                                                .text_size(px(15.0))
-                                                .font_weight(gpui_kit::FontWeight::SEMIBOLD)
-                                                .text_color(ui::fg(cx))
-                                                .child("欢迎使用 Notype 开源版 · 请配置 API Key"),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_size(px(13.0))
-                                                .text_color(ui::fg2(cx))
-                                                .child("Notype 是一款开源口述输入工具。语音转写与润色请求直接从您的本地安全发送至 AI 网关，请先填入您的 API Key 开始使用。"),
-                                        ),
-                                ),
-                        )
-                        .child(button(
-                            "overview-go-to-key-btn",
-                            "前往配置 API Key",
-                            true,
-                            move |_, cx| {
-                                view_for_btn.update(cx, |v, cx| {
-                                    v.active_tab = crate::views::NavTab::Settings;
-                                    cx.notify();
-                                });
-                            },
-                        )),
-                )
-            })
+            .child(self.setup_status(cx))
             // 1. 4-Column Key Metrics Strip
             .child(
                 div()

@@ -12,12 +12,10 @@ use super::Session;
 
 impl Session {
     pub fn repolish_history_item(&mut self, item: HistoryItem, cx: &mut Context<Self>) {
-        if self.repolishing_id.is_some() || self.key.is_empty() {
+        if self.repolishing_id.is_some() || self.provider_key(self.connections.kind).is_empty() {
             return;
         }
-        let base_url = self.api_base_url.clone();
-        let key = self.key.clone();
-        let model = self.polish_model.clone();
+        let (base_url, key, model) = self.polish_route();
         let phrases = self
             .store
             .lock()
@@ -111,7 +109,12 @@ impl Session {
 
     /// Persist a correction learned in the app (history / studio).
     pub fn apply_history_correction(&mut self, id: i64, corrected: &str, cx: &mut Context<Self>) {
-        let Some(item) = self.store.lock().ok().and_then(|store| store.history_item(id)) else {
+        let Some(item) = self
+            .store
+            .lock()
+            .ok()
+            .and_then(|store| store.history_item(id))
+        else {
             return;
         };
         let old = item.display_text().to_string();

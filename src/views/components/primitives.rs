@@ -1,8 +1,8 @@
 use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_kit::component::{Icon, IconName, Sizable, Size};
 use gpui_kit::{
-    App, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, px, rems, rgb,
+    div, px, rems, rgb, App, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
 use crate::ui;

@@ -7,16 +7,16 @@ use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{Icon, IconName, Sizable, Size};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, div, px, rems,
+    div, px, rems, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled,
 };
 
 use crate::mining::{AutoLearnMode, PRESET_PHRASES};
 use crate::paste;
 use crate::session::format_relative_time;
 use crate::ui;
-use crate::views::SettingsView;
 use crate::views::components::{button, empty_state, icon_button, phrase_row};
+use crate::views::SettingsView;
 
 impl SettingsView {
     pub fn render_dictionary(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -44,10 +44,8 @@ impl SettingsView {
             "未执行过学习".to_string()
         };
 
-        let existing_phrases: HashSet<String> = phrases
-            .iter()
-            .map(|p| p.phrase.to_lowercase())
-            .collect();
+        let existing_phrases: HashSet<String> =
+            phrases.iter().map(|p| p.phrase.to_lowercase()).collect();
 
         let total_phrases = phrases.len();
         let display_limit = self.dict_display_limit;

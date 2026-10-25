@@ -1,107 +1,104 @@
-use std::path::{Path, PathBuf};
-
+//! Keychain credentials with verified, backwards-compatible legacy migration.
+use crate::providers::ProviderKind;
+use std::path::PathBuf;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeySource {
     Missing,
-    Database,
-    File(PathBuf),
+    Keychain,
+    MigrationPending,
 }
-
-pub fn env_path() -> PathBuf {
-    if let Ok(dir) = crate::store::Store::data_dir() {
-        let app_env = dir.join(".env.local");
-        if app_env.exists() {
-            return app_env;
-        }
-    }
-    let manifest_env = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.local");
-    if manifest_env.exists() {
-        return manifest_env;
-    }
-    if let Ok(dir) = crate::store::Store::data_dir() {
-        return dir.join(".env.local");
-    }
-    manifest_env
-}
-
 pub fn load_key() -> (String, KeySource) {
-    // 1. Check SQLite database (primary storage for user-entered keys in open-source app)
-    if let Ok(store) = crate::store::Store::open() {
-        let db_key = store.api_key();
-        if !db_key.is_empty() {
-            return (db_key, KeySource::Database);
+    match load_provider(ProviderKind::Vercel) {
+        Ok(key) => {
+            let source = if key.is_empty() {
+                KeySource::Missing
+            } else {
+                KeySource::Keychain
+            };
+            (key, source)
+        }
+        Err(_) => (
+            legacy_key().unwrap_or_default(),
+            KeySource::MigrationPending,
+        ),
+    }
+}
+pub fn load_provider(kind: ProviderKind) -> Result<String, String> {
+    if let Some(key) = crate::keychain::load(kind.id())? {
+        return Ok(key);
+    }
+    if kind == ProviderKind::Vercel {
+        if let Some(key) = legacy_key() {
+            save_provider(kind, &key)?;
+            return Ok(key);
         }
     }
-    // 2. Check ~/Library/Application Support/Notype/.env.local
+    Ok(String::new())
+}
+fn legacy_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
     if let Ok(dir) = crate::store::Store::data_dir() {
-        let app_env = dir.join(".env.local");
-        if app_env.exists() {
-            if let Some(key) = read_key_file(&app_env) {
-                if let Ok(store) = crate::store::Store::open() {
-                    let _ = store.set_api_key(&key);
+        paths.push(dir.join(".env.local"));
+    }
+    if std::env::var_os("NOTYPE_DATA_DIR").is_some() {
+        return paths;
+    }
+    let developer = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.local");
+    if !paths.contains(&developer) {
+        paths.push(developer);
+    }
+    paths
+}
+fn legacy_key() -> Option<String> {
+    if let Ok(store) = crate::store::Store::open() {
+        let key = store.api_key();
+        if !key.is_empty() {
+            return Some(key);
+        }
+    }
+    legacy_paths()
+        .iter()
+        .find_map(|p| std::fs::read_to_string(p).ok().and_then(|s| parse_env(&s)))
+}
+fn clear_legacy() -> Result<(), String> {
+    // Remove only this application's key assignment, preserving unrelated environment variables.
+    for path in legacy_paths() {
+        match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                if text
+                    .lines()
+                    .any(|l| l.trim().starts_with("AI_GATEWAY_API_KEY="))
+                {
+                    let text = text
+                        .lines()
+                        .filter(|l| !l.trim().starts_with("AI_GATEWAY_API_KEY="))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    crate::tasks::atomic_write(&path, text.as_bytes())?;
                 }
-                return (key, KeySource::File(app_env));
             }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+            Err(_) => return Err("无法清理旧密钥文件；钥匙串副本已保存".into()),
         }
     }
-    // 3. Check developer CARGO_MANIFEST_DIR/.env.local (convenient for local dev)
-    let manifest_env = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.local");
-    if manifest_env.exists() {
-        if let Some(key) = read_key_file(&manifest_env) {
-            if let Ok(store) = crate::store::Store::open() {
-                let _ = store.set_api_key(&key);
-            }
-            return (key, KeySource::File(manifest_env));
-        }
-    }
-    (String::new(), KeySource::Missing)
+    crate::store::Store::open()
+        .map_err(|_| "无法打开旧密钥配置")?
+        .set_api_key("")
+        .map_err(|_| "无法清理旧数据库密钥".to_string())
 }
-
-pub fn save_key(key: &str) -> std::io::Result<PathBuf> {
-    let key_trimmed = key.trim();
-    // 1. Always save directly into SQLite database
-    if let Ok(store) = crate::store::Store::open() {
-        let _ = store.set_api_key(key_trimmed);
+pub fn save_provider(kind: ProviderKind, key: &str) -> Result<(), String> {
+    crate::keychain::save(kind.id(), key.trim())?;
+    if kind == ProviderKind::Vercel {
+        clear_legacy()?;
     }
-    // 2. Also write to .env.local for file-based tools / compatibility
-    let body = format!(
-        "# Notype API Key 配置文件\nAI_GATEWAY_API_KEY={}\n",
-        key_trimmed
-    );
-    let target = if let Ok(dir) = crate::store::Store::data_dir() {
-        let _ = std::fs::create_dir_all(&dir);
-        let app_env = dir.join(".env.local");
-        let _ = std::fs::write(&app_env, &body);
-        let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.local");
-        if manifest_path.exists() {
-            let _ = std::fs::write(&manifest_path, &body);
-        }
-        app_env
-    } else {
-        let path = env_path();
-        std::fs::write(&path, &body)?;
-        path
-    };
-    Ok(target)
+    Ok(())
 }
-
-pub fn clear_key() {
-    if let Ok(store) = crate::store::Store::open() {
-        let _ = store.set_api_key("");
+pub fn clear_provider(kind: ProviderKind) -> Result<(), String> {
+    if kind == ProviderKind::Vercel {
+        clear_legacy()?;
     }
-    if let Ok(dir) = crate::store::Store::data_dir() {
-        let app_env = dir.join(".env.local");
-        if app_env.exists() {
-            let _ = std::fs::remove_file(app_env);
-        }
-    }
+    crate::keychain::delete(kind.id())
 }
-
-pub fn read_key_file(path: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
-    parse_env(&text)
-}
-
 pub fn parse_env(text: &str) -> Option<String> {
     for line in text.lines() {
         let line = line.trim();

@@ -3,8 +3,8 @@ use std::time::Duration;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{Icon, IconName, Sizable, Size};
 use gpui_kit::{
-    Animation, AnimationExt, Context, Entity, FontWeight, Hsla, IntoElement, ParentElement,
-    Render, Styled, Window, div, hsla, px, rgb,
+    div, hsla, px, rgb, Animation, AnimationExt, Context, Entity, FontWeight, Hsla, IntoElement,
+    ParentElement, Render, Styled, Window,
 };
 use objc2::MainThreadMarker;
 use objc2_app_kit::{
@@ -13,7 +13,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSPoint, NSString};
 
-use crate::session::{Notice, Phase, Session, mmss};
+use crate::session::{mmss, Notice, Phase, Session};
 use crate::views::components::ellipsize;
 
 const VOICE_TITLE: &str = "Notype Voice";
@@ -170,23 +170,25 @@ impl Render for OverlayView {
             .size_full()
             .items_center()
             .justify_center()
-            .child(content.with_animation(
-                ("hud", appearance),
-                Animation::new(if exiting {
-                    Duration::from_millis(150)
-                } else {
-                    Duration::from_millis(180)
-                })
-                .with_easing(move |t| {
-                    let eased = gpui_kit::base::animation::ease_out_cubic(t);
-                    if exiting {
-                        1.0 - eased
+            .child(
+                content.with_animation(
+                    ("hud", appearance),
+                    Animation::new(if exiting {
+                        Duration::from_millis(150)
                     } else {
-                        eased
-                    }
-                }),
-                |element, delta| element.opacity(delta),
-            ))
+                        Duration::from_millis(180)
+                    })
+                    .with_easing(move |t| {
+                        let eased = gpui_kit::base::animation::ease_out_cubic(t);
+                        if exiting {
+                            1.0 - eased
+                        } else {
+                            eased
+                        }
+                    }),
+                    |element, delta| element.opacity(delta),
+                ),
+            )
     }
 }
 
@@ -206,18 +208,28 @@ fn hud_shell() -> gpui_kit::Div {
 }
 
 fn listening_view(wave: [f32; crate::capture::WAVE_BARS], elapsed: Duration) -> gpui_kit::Div {
-    hud_shell()
-        .child(
-            div()
-                .size(px(8.0))
-                .rounded_full()
-                .bg(rgb(0x34d399)),
+    let near_limit = elapsed.as_secs() >= crate::tasks::MAX_RECORDING_SECS - 60;
+    let timer = if near_limit {
+        format!(
+            "剩余 {}",
+            mmss(Duration::from_secs(
+                crate::tasks::MAX_RECORDING_SECS.saturating_sub(elapsed.as_secs())
+            ))
         )
+    } else {
+        mmss(elapsed)
+    };
+    hud_shell()
+        .child(div().size(px(8.0)).rounded_full().bg(rgb(0x34d399)))
         .child(
             div()
                 .font_weight(FontWeight::MEDIUM)
-                .text_color(rgb(0xf2fcf6))
-                .child(mmss(elapsed)),
+                .text_color(if near_limit {
+                    rgb(0xfbbf24)
+                } else {
+                    rgb(0xf2fcf6)
+                })
+                .child(timer),
         )
         .child(wave_view(wave))
         .child(esc_hint())
@@ -239,7 +251,8 @@ fn wave_view(wave: [f32; crate::capture::WAVE_BARS]) -> gpui_kit::Div {
                 index - HALF_BARS
             };
             let norm_dist = dist as f32 / (HALF_BARS as f32 - 0.5);
-            let source = (dist * crate::capture::WAVE_BARS / HALF_BARS).min(crate::capture::WAVE_BARS - 1);
+            let source =
+                (dist * crate::capture::WAVE_BARS / HALF_BARS).min(crate::capture::WAVE_BARS - 1);
             let raw_level = wave[source];
 
             // Substantially boosted sensitivity so voice syllables pop vigorously

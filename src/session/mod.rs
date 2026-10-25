@@ -9,13 +9,13 @@ use crate::gateway::{POLISH_MODEL, TRANSCRIBE_MODEL};
 use crate::mining::{AutoLearnMode, CorrectionRule};
 use crate::polish::PolishMode;
 use crate::secrets;
-use crate::store::{
-    HistoryItem, Phrase, PhraseCandidate, StatsSummary, Store, TriggerMode,
-};
+use crate::store::{HistoryItem, Phrase, PhraseCandidate, StatsSummary, Store, TriggerMode};
 
 mod history;
 mod lifecycle;
 mod mining;
+mod providers;
+mod recovery;
 mod settings;
 mod studio;
 mod time;
@@ -24,7 +24,15 @@ mod types;
 pub use time::{format_duration_ms, format_relative_time, mmss};
 pub use types::{Notice, Phase, Stage};
 
+pub use providers::ConnectionState;
+
 pub struct Session {
+    pub connections: ConnectionState,
+    pub data_dir_display: String,
+    pub recovery_tasks: Vec<crate::tasks::Summary>,
+    pub recovery_status: String,
+    pub(super) active_task: Option<String>,
+    pub(super) cancelled: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub phase: Phase,
     pub level: f32,
     pub wave: [f32; crate::capture::WAVE_BARS],
@@ -39,12 +47,9 @@ pub struct Session {
     pub save_audio: bool,
     pub mic_device: String,
     pub available_mics: Vec<String>,
-    pub api_base_url: String,
-    pub transcribe_model: String,
-    pub polish_model: String,
-    pub key_status: String,
-    pub gateway_test_status: Option<(bool, String)>,
-    pub gateway_testing: bool,
+    pub mic_refreshing: bool,
+    pub accessibility_trusted: bool,
+    pub microphone_access: crate::permissions::MicrophoneAccess,
     pub phrases: Vec<Phrase>,
     pub candidates: Vec<PhraseCandidate>,
     pub corrections: Vec<CorrectionRule>,
@@ -69,7 +74,6 @@ pub struct Session {
     pub studio_busy: bool,
     pub studio_dictating: bool,
     pub mic_testing: bool,
-    pub(super) key: String,
     pub(super) store: Arc<Mutex<Store>>,
     pub(super) recording: Option<ActiveRecording>,
     pub(super) mic_test_stream: Option<ActiveRecording>,
@@ -105,12 +109,59 @@ impl Session {
         let sound_feedback = store.sound_feedback();
         let save_audio = store.save_audio();
         let mic_device = store.mic_device();
-        let api_base_url = store.api_base_url();
-        let transcribe_model = store.transcribe_model();
-        let polish_model = store.polish_model();
-        let available_mics = crate::capture::list_input_devices();
+        let kinds = crate::providers::ProviderKind::ALL;
+        let profiles = kinds.map(|kind| crate::providers::Profile::load(&store, kind));
+        let kind = crate::providers::active_provider(&store);
+        let transcribe_model = profiles[kind.index()].transcribe_model.clone();
+        let polish_model = profiles[kind.index()].polish_model.clone();
+        let mut provider_keys = [key.clone(), String::new()];
+        let mut credential_status = settings::key_status(&key, &source);
+        let openrouter_status = match secrets::load_provider(kinds[1]) {
+            Ok(value) => {
+                let status = settings::key_status(&value, &secrets::KeySource::Keychain);
+                provider_keys[1] = value;
+                status
+            }
+            Err(err) => err,
+        };
+        if kind == crate::providers::ProviderKind::OpenRouter {
+            credential_status = openrouter_status;
+        }
+        let model_catalogs = kinds.map(|kind| {
+            crate::providers::ModelCatalog::from_entries(
+                store
+                    .setting(&format!("models.{}", kind.id()))
+                    .and_then(|v| serde_json::from_str(&v).ok())
+                    .unwrap_or_default(),
+            )
+        });
+        let available_mics = Vec::new();
+        let selected_key = provider_keys[kind.index()].clone();
 
         Self {
+            connections: ConnectionState {
+                revision: 0,
+                kind,
+                checks: Default::default(),
+                profiles,
+                provider_keys,
+                model_catalogs,
+                models_loading: false,
+                model_status: String::new(),
+                transcribe_model,
+                polish_model,
+                key_status: credential_status,
+                gateway_test_status: None,
+                gateway_testing: false,
+                key: selected_key,
+            },
+            data_dir_display: Store::data_dir()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "无法读取数据目录".into()),
+            recovery_tasks: Vec::new(),
+            recovery_status: String::new(),
+            active_task: None,
+            cancelled: None,
             phase: Phase::Idle,
             level: 0.0,
             wave: [0.0; crate::capture::WAVE_BARS],
@@ -125,12 +176,9 @@ impl Session {
             save_audio,
             mic_device,
             available_mics,
-            api_base_url,
-            transcribe_model,
-            polish_model,
-            key_status: settings::key_status(&key, &source),
-            gateway_test_status: None,
-            gateway_testing: false,
+            mic_refreshing: false,
+            microphone_access: crate::permissions::microphone_status(),
+            accessibility_trusted: crate::hotkey::is_accessibility_trusted(),
             phrases,
             candidates,
             corrections,
@@ -140,7 +188,10 @@ impl Session {
             mining_status: if last_mine_error.is_empty() {
                 String::new()
             } else {
-                format!("上次学习失败：{}", time::truncate_text(&last_mine_error, 80))
+                format!(
+                    "上次学习失败：{}",
+                    time::truncate_text(&last_mine_error, 80)
+                )
             },
             last_mined_at,
             audio_ids,
@@ -155,7 +206,6 @@ impl Session {
             studio_busy: false,
             studio_dictating: false,
             mic_testing: false,
-            key,
             store: Arc::new(Mutex::new(store)),
             recording: None,
             mic_test_stream: None,

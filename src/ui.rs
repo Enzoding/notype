@@ -5,8 +5,8 @@
 
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{
-    App, Div, FontWeight, Hsla, IntoElement, ParentElement, SharedString, Styled, div, px, rems,
-    rgb,
+    div, px, rems, rgb, App, Div, FontWeight, Hsla, IntoElement, ParentElement, SharedString,
+    Styled,
 };
 
 /// Whether the window is currently in dark appearance.
@@ -318,16 +318,12 @@ pub fn feature_surface(fill: FeatureFill, cx: &App) -> Div {
 
 /// A section heading: quiet, structured, and spaced cleanly above its card.
 pub fn section_label(text: impl Into<SharedString>, trailing: Option<String>) -> Div {
-    let row = div()
-        .flex()
-        .items_center()
-        .gap(px(8.0))
-        .child(
-            div()
-                .text_size(px(12.0))
-                .font_weight(FontWeight::SEMIBOLD)
-                .child(text.into()),
-        );
+    let row = div().flex().items_center().gap(px(8.0)).child(
+        div()
+            .text_size(px(12.0))
+            .font_weight(FontWeight::SEMIBOLD)
+            .child(text.into()),
+    );
     match trailing {
         Some(text) => row.child(
             div()

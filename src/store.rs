@@ -3,10 +3,10 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 
 use crate::mining::{
-    ACTIVE_PHRASE_LIMIT, CandidateDraft, CorrectionRule, Evidence, normalize_term, term_key,
+    normalize_term, term_key, CandidateDraft, CorrectionRule, Evidence, ACTIVE_PHRASE_LIMIT,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -152,6 +152,9 @@ impl Store {
                 duration_ms INTEGER NOT NULL DEFAULT 0,
                 mode TEXT NOT NULL DEFAULT ''
             );
+            CREATE TABLE IF NOT EXISTS task_history (task_id TEXT PRIMARY KEY, history_id INTEGER NOT NULL);
+            CREATE TRIGGER IF NOT EXISTS history_delete_task_mapping AFTER DELETE ON history
+            BEGIN DELETE FROM task_history WHERE history_id = OLD.id; END;
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -224,6 +227,12 @@ impl Store {
     }
 
     pub fn data_dir() -> Result<PathBuf> {
+        // Isolated development runs must not migrate or modify the user's production data.
+        if let Some(path) = std::env::var_os("NOTYPE_DATA_DIR") {
+            let path = PathBuf::from(path);
+            anyhow::ensure!(path.is_absolute(), "NOTYPE_DATA_DIR 必须是绝对路径");
+            return Ok(path);
+        }
         let base = dirs::data_dir().context("找不到本机数据目录")?;
         let dir = base.join("Notype");
         let legacy_dir = base.join("OpenTypeless");
@@ -294,6 +303,43 @@ impl Store {
         self.set_setting("sound_feedback", if enabled { "1" } else { "0" })
     }
 
+    /// A durable task maps to one history row, including after a process restart.
+    pub fn save_task_history(&self, task: &crate::tasks::Task) -> Result<i64> {
+        self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        let result = (|| {
+            if let Ok(id) = self.conn.query_row(
+                "SELECT th.history_id FROM task_history th JOIN history h ON h.id = th.history_id WHERE th.task_id = ?1",
+                [&task.id],
+                |row| row.get::<_, i64>(0),
+            ) {
+                self.update_history_polished(id, &task.polished, &task.config.mode)?;
+                return Ok(id);
+            }
+            let id = self.add_history(
+                &task.config.bundle,
+                &task.transcript,
+                &task.polished,
+                task.duration_ms().unwrap_or_default(),
+                &task.config.mode,
+            )?;
+            self.conn.execute(
+                "INSERT OR REPLACE INTO task_history (task_id, history_id) VALUES (?1, ?2)",
+                rusqlite::params![task.id, id],
+            )?;
+            Ok(id)
+        })();
+        match result {
+            Ok(id) => {
+                self.conn.execute_batch("COMMIT")?;
+                Ok(id)
+            }
+            Err(err) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                Err(err)
+            }
+        }
+    }
+
     pub fn save_audio(&self) -> bool {
         self.setting("save_audio").as_deref() != Some("0")
     }
@@ -318,20 +364,17 @@ impl Store {
         self.set_setting("api_key", key.trim())
     }
 
-    pub fn api_base_url(&self) -> String {
-        self.setting("api_base_url")
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| crate::gateway::DEFAULT_BASE_URL.to_string())
-    }
-
+    #[cfg(test)]
     pub fn set_api_base_url(&self, url: &str) -> Result<()> {
         self.set_setting("api_base_url", url.trim())
     }
 
+    #[cfg(test)]
     pub fn set_transcribe_model(&self, model: &str) -> Result<()> {
         self.set_setting("transcribe_model", model.trim())
     }
 
+    #[cfg(test)]
     pub fn set_polish_model(&self, model: &str) -> Result<()> {
         self.set_setting("polish_model", model.trim())
     }
@@ -512,9 +555,7 @@ impl Store {
 
     pub fn add_phrases_batch(&self, text: &str) -> Result<usize> {
         let mut added = 0usize;
-        for token in text.split(|c| {
-            c == '\n' || c == ',' || c == '，' || c == ';' || c == '；'
-        }) {
+        for token in text.split(|c| c == '\n' || c == ',' || c == '，' || c == ';' || c == '；') {
             let Some(term) = normalize_term(token) else {
                 continue;
             };
@@ -654,12 +695,8 @@ impl Store {
                     )
                     .ok();
                 if status.as_deref() == Some("accepted") {
-                    let _ = self.insert_phrase(
-                        &draft.phrase,
-                        "accepted",
-                        draft.sessions as i64,
-                        stamp,
-                    );
+                    let _ =
+                        self.insert_phrase(&draft.phrase, "accepted", draft.sessions as i64, stamp);
                 }
             }
         }
@@ -689,8 +726,7 @@ impl Store {
         let mut stmt = self.conn.prepare(sql)?;
         let map = |row: &rusqlite::Row<'_>| {
             let evidence_json: String = row.get(9).unwrap_or_else(|_| "[]".into());
-            let evidence: Vec<Evidence> =
-                serde_json::from_str(&evidence_json).unwrap_or_default();
+            let evidence: Vec<Evidence> = serde_json::from_str(&evidence_json).unwrap_or_default();
             Ok(PhraseCandidate {
                 id: row.get(0)?,
                 phrase: row.get(1)?,
@@ -1089,6 +1125,60 @@ mod tests {
         assert!(store.corrections().is_empty());
     }
 
+    #[test]
+    fn retry_recreates_history_after_its_previous_row_was_deleted() {
+        let task = crate::tasks::fixture();
+        let store = Store::open_in_memory().unwrap();
+        let first = store.save_task_history(&task).unwrap();
+        store
+            .conn
+            .execute("DELETE FROM history WHERE id = ?1", [first])
+            .unwrap();
+        let second = store.save_task_history(&task).unwrap();
+        assert_eq!(store.history().unwrap()[0].id, second);
+        assert_eq!(store.history().unwrap().len(), 1);
+        task.remove().unwrap();
+    }
+    #[test]
+    fn deleting_history_cannot_retarget_a_task_to_a_reused_sqlite_id() {
+        let mut task = crate::tasks::fixture();
+        task.transcript = "first synthetic task".into();
+        let store = Store::open_in_memory().unwrap();
+        let first = store.save_task_history(&task).unwrap();
+        store
+            .conn
+            .execute("DELETE FROM history WHERE id = ?1", [first])
+            .unwrap();
+        let unrelated = store
+            .add_history("other.app", "unrelated synthetic text", "", 0, "raw")
+            .unwrap();
+        assert_eq!(first, unrelated);
+        task.polished = "retried synthetic text".into();
+        let recovered = store.save_task_history(&task).unwrap();
+        assert_ne!(recovered, unrelated);
+        assert_eq!(
+            store.history_item(unrelated).unwrap().transcript,
+            "unrelated synthetic text"
+        );
+        assert!(store.history_item(unrelated).unwrap().polished.is_empty());
+        task.remove().unwrap();
+    }
+    #[test]
+    fn opens_older_history_schema_without_losing_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE history (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, bundle_id TEXT NOT NULL, transcript TEXT NOT NULL, polished TEXT NOT NULL); INSERT INTO history (created_at,bundle_id,transcript,polished) VALUES (1,'test.app','synthetic legacy text','');").unwrap();
+        let store = Store::init(conn).unwrap();
+        assert_eq!(
+            store.history().unwrap()[0].transcript,
+            "synthetic legacy text"
+        );
+        assert_eq!(store.history().unwrap()[0].duration_ms, 0);
+        let count: i64 = store
+            .conn
+            .query_row("SELECT count(*) FROM task_history", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
     #[test]
     fn audio_dir_resolves_and_ids_scan_gracefully() {
         let dir = Store::audio_dir().unwrap();

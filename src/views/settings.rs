@@ -1,40 +1,82 @@
 use std::process::Command;
 
 use gpui_kit::component::input::Input;
-use gpui_kit::component::Sizable;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::IconName;
+use gpui_kit::component::Sizable;
 use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{Context, FontWeight, IntoElement, ParentElement, Styled, div, px, rems};
+use gpui_kit::{div, px, rems, Context, FontWeight, IntoElement, ParentElement, Styled};
 
 use crate::hotkey::{self, HOTKEY_OPTIONS};
 use crate::mining::AutoLearnMode;
 use crate::store::{Store, TriggerMode};
 use crate::ui;
-use crate::views::SettingsView;
 use crate::views::components::{
-    base_url_row, button, choice_row, connection_status_row, ellipsize, icon_button,
-    inline_wave_view, key_row, mode_chip, setting_row,
+    button, choice_row, ellipsize, icon_button, inline_wave_view, mode_chip, setting_row,
 };
+use crate::views::SettingsView;
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SettingsSection {
+    #[default]
+    Channel,
+    Recording,
+    Input,
+    Writing,
+    System,
+}
+impl SettingsSection {
+    pub const ALL: [Self; 5] = [
+        Self::Channel,
+        Self::Recording,
+        Self::Input,
+        Self::Writing,
+        Self::System,
+    ];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Channel => "AI 渠道",
+            Self::Recording => "录音与恢复",
+            Self::Input => "快捷键与麦克风",
+            Self::Writing => "润色与学习",
+            Self::System => "本机",
+        }
+    }
+}
 
 impl SettingsView {
-    pub fn render_settings(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub fn settings_navigation(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let view = cx.entity();
+        let active = self.settings_section;
+        div()
+            .flex()
+            .flex_wrap()
+            .flex_shrink_0()
+            .px(px(28.0))
+            .py(px(12.0))
+            .gap(px(8.0))
+            .children(SettingsSection::ALL.map(|section| {
+                let view = view.clone();
+                button(
+                    format!("settings-section-{section:?}"),
+                    section.label(),
+                    active == section,
+                    move |_, cx| {
+                        view.update(cx, |v, cx| {
+                            v.settings_section = section;
+                            cx.notify();
+                        });
+                    },
+                )
+                .h(px(32.0))
+                .rounded(px(9999.0))
+            }))
+    }
+    pub fn render_settings(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let session_handle = self.session.clone();
-        let key_input = self.key_input.clone();
-        let base_url_input = self.base_url_input.clone();
         let custom_prompt_input = self.custom_prompt_input.clone();
-        let data_dir = Store::data_dir()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| "~/Library/Application Support/Notype".into());
+        let data_dir = self.session.read(cx).data_dir_display.clone();
 
         let (
-            has_key,
-            key,
-            _api_base_url,
-            _key_status,
-            gateway_test_status,
-            gateway_testing,
             hotkey_code,
             trigger_mode,
             polish_strategy,
@@ -47,19 +89,11 @@ impl SettingsView {
             mic_testing,
             wave,
             show_dock,
-            transcribe_model,
-            polish_model,
             auto_learn_mode,
             learn_from_edits,
         ) = {
             let s = self.session.read(cx);
             (
-                s.has_key(),
-                s.key.clone(),
-                s.api_base_url.clone(),
-                s.key_status.clone(),
-                s.gateway_test_status.clone(),
-                s.gateway_testing,
                 s.hotkey_code,
                 s.trigger_mode,
                 s.polish_strategy.clone(),
@@ -72,29 +106,81 @@ impl SettingsView {
                 s.mic_testing,
                 s.wave,
                 s.show_dock,
-                s.transcribe_model.clone(),
-                s.polish_model.clone(),
                 s.auto_learn_mode,
                 s.learn_from_edits,
             )
         };
 
-        let key_editing = self.key_editing || !has_key;
-        let ax_trusted = hotkey::is_accessibility_trusted() || hotkey::is_tap_active();
+        let ax_trusted = self.session.read(cx).accessibility_trusted;
+        let microphone_access = self.session.read(cx).microphone_access;
+        let section = self.settings_section;
 
         div()
             .flex()
             .flex_col()
             .gap(px(32.0))
+            .when(section==SettingsSection::Channel,|col|col.child(self.provider_settings(cx)))
+            .when(section==SettingsSection::Recording,|col|col.child(self.recovery_settings(cx)))
             // 1. Hotkey & Accessibility Section
-            .child(
+            .when(section==SettingsSection::Input, |col| col.child(
                 div()
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(ui::section_label("快捷键", None).text_color(ui::fg2(cx)))
+                    .child(ui::section_label("权限与快捷键", None).text_color(ui::fg2(cx)))
                     .child(
                         ui::card(cx)
+                            .child(setting_row("麦克风权限","用于录制你的声音。",true,cx).child(
+                                div().flex().items_center().gap(px(12.0))
+                                    .child(ui::pill(microphone_access.label(),if microphone_access.granted(){ui::ok(cx)}else{ui::warn(cx)},if microphone_access.granted(){ui::ok_soft(cx)}else{ui::warn_soft(cx)}))
+                                    .child(button("microphone-permission",if microphone_access.granted(){"管理麦克风权限"}else{"授权麦克风"},false,|_,_|{crate::permissions::request_microphone();}))
+                            ))
+                            .child(
+                                setting_row(
+                                    "辅助功能",
+                                    "识别快捷键，并把文字贴进当前窗口。",
+                                    false,
+                                    cx,
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(12.0))
+                                        .child(ui::pill(
+                                            if ax_trusted {
+                                                "已授权"
+                                            } else {
+                                                "未授权"
+                                            },
+                                            if ax_trusted {
+                                                ui::ok(cx)
+                                            } else {
+                                                ui::warn(cx)
+                                            },
+                                            if ax_trusted {
+                                                ui::ok_soft(cx)
+                                            } else {
+                                                ui::warn_soft(cx)
+                                            },
+                                        ))
+                                        .child(button(
+                                            "open-ax-settings",
+                                            if ax_trusted {
+                                                "打开辅助功能"
+                                            } else {
+                                                "授予辅助功能权限"
+                                            },
+                                            false,
+                                            |_, _| {
+                                                hotkey::request_accessibility_permission();
+                                                let _ = Command::new("open")
+                                                    .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+                                                    .spawn();
+                                            },
+                                        )),
+                                ),
+                            )
                             // Trigger Key Row
                             .child(
                                 setting_row(
@@ -154,57 +240,11 @@ impl SettingsView {
                                         ),
                                 ),
                             )
-                            // Accessibility Permission Row
-                            .child(
-                                setting_row(
-                                    "辅助功能",
-                                    "识别快捷键，并把文字贴进当前窗口。",
-                                    false,
-                                    cx,
-                                )
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(12.0))
-                                        .child(ui::pill(
-                                            if ax_trusted {
-                                                "已授权"
-                                            } else {
-                                                "未授权"
-                                            },
-                                            if ax_trusted {
-                                                ui::ok(cx)
-                                            } else {
-                                                ui::warn(cx)
-                                            },
-                                            if ax_trusted {
-                                                ui::ok_soft(cx)
-                                            } else {
-                                                ui::warn_soft(cx)
-                                            },
-                                        ))
-                                        .child(button(
-                                            "open-ax-settings",
-                                            if ax_trusted {
-                                                "打开辅助功能"
-                                            } else {
-                                                "授予辅助功能权限"
-                                            },
-                                            false,
-                                            |_, _| {
-                                                hotkey::request_accessibility_permission();
-                                                let _ = Command::new("open")
-                                                    .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-                                                    .spawn();
-                                            },
-                                        )),
-                                ),
-                            ),
+,
                     ),
-            )
+            ))
             // 2. Microphone & Audio Section
-            .child(
+            .when(section==SettingsSection::Input, |col| col.child(
                 div()
                     .flex()
                     .flex_col()
@@ -342,9 +382,9 @@ impl SettingsView {
                                 }),
                             ),
                     ),
-            )
+            ))
             // 3. Polish Strategy & Style Rules Section
-            .child(
+            .when(section==SettingsSection::Writing, |col| col.child(
                 div()
                     .flex()
                     .flex_col()
@@ -515,9 +555,9 @@ impl SettingsView {
                                     ),
                             ),
                     ),
-            )
+            ))
             // 4. Personal dictionary learning
-            .child(
+            .when(section==SettingsSection::Writing, |col| col.child(
                 div()
                     .flex()
                     .flex_col()
@@ -608,116 +648,9 @@ impl SettingsView {
                                     .child("AI 提取会把历史文本发送到当前 AI Gateway；不发送录音。关闭自动学习后，手动词条仍然生效。"),
                             ),
                     ),
-            )
-            // 5. API Gateway & Connection Section
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(8.0))
-                    .child(ui::section_label("API 连接与服务", None).text_color(ui::fg2(cx)))
-                    .child(
-                        ui::card(cx)
-                            .child(key_row(
-                                key_editing,
-                                has_key,
-                                &key,
-                                &key_input,
-                                &session_handle,
-                                &view,
-                                cx,
-                            ))
-                            .child(base_url_row(
-                                &base_url_input,
-                                &session_handle,
-                                cx,
-                            ))
-                            .child(connection_status_row(
-                                gateway_testing,
-                                gateway_test_status,
-                                &session_handle,
-                                cx,
-                            )),
-                    ),
-            )
-            // 6. Models Section
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(8.0))
-                    .child(ui::section_label("AI 模型选择", None).text_color(ui::fg2(cx)))
-                    .child(
-                        ui::card(cx)
-                            .child(
-                                setting_row(
-                                    "语音转写模型",
-                                    "录音识别文字的模型（推荐使用 mai-transcribe-2 或 Whisper）。",
-                                    true,
-                                    cx,
-                                )
-                                .child(
-                                    choice_row().children(
-                                        [
-                                            ("microsoft/mai-transcribe-2", "mai-transcribe-2 (微软推荐)"),
-                                            ("openai/whisper-large-v3", "Whisper v3 (OpenAI)"),
-                                        ]
-                                        .into_iter()
-                                        .map(|(id, label)| {
-                                            let active = transcribe_model == id;
-                                            let s = session_handle.clone();
-                                            mode_chip(
-                                                format!("tm-model-{}", id.replace('/', "-")),
-                                                label,
-                                                active,
-                                                move |_, cx| {
-                                                    s.update(cx, |session, cx| {
-                                                        session.set_transcribe_model(id, cx);
-                                                    });
-                                                },
-                                                cx,
-                                            )
-                                        }),
-                                    ),
-                                ),
-                            )
-                            .child(
-                                setting_row(
-                                    "智能润色模型",
-                                    "去除口癖赘字、修正同音错字并保留表达风格的语言模型。",
-                                    false,
-                                    cx,
-                                )
-                                .child(
-                                    choice_row().children(
-                                        [
-                                            ("deepseek/deepseek-v4.1-flash", "DeepSeek Flash (极速推荐)"),
-                                            ("openai/gpt-4o-mini", "GPT-4o Mini"),
-                                            ("anthropic/claude-3-5-haiku", "Claude 3.5 Haiku"),
-                                        ]
-                                        .into_iter()
-                                        .map(|(id, label)| {
-                                            let active = polish_model == id;
-                                            let s = session_handle.clone();
-                                            mode_chip(
-                                                format!("pm-model-{}", id.replace('/', "-")),
-                                                label,
-                                                active,
-                                                move |_, cx| {
-                                                    s.update(cx, |session, cx| {
-                                                        session.set_polish_model(id, cx);
-                                                    });
-                                                },
-                                                cx,
-                                            )
-                                        }),
-                                    ),
-                                ),
-                            ),
-                    ),
-            )
+            ))
             // 5. System & Storage Section
-            .child(
+            .when(section==SettingsSection::System, |col| col.child(
                 div()
                     .flex()
                     .flex_col()
@@ -764,6 +697,6 @@ impl SettingsView {
                                 )),
                             ),
                     ),
-            )
+            ))
     }
 }

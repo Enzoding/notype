@@ -2,7 +2,7 @@ use gpui_kit::Context;
 
 use crate::audio::{self, SoundCue};
 use crate::capture::ActiveRecording;
-use crate::gateway::{self, POLISH_MODEL, TRANSCRIBE_MODEL};
+use crate::gateway;
 use crate::hotkey;
 use crate::mining::AutoLearnMode;
 use crate::secrets::{self, KeySource};
@@ -10,11 +10,15 @@ use crate::store::TriggerMode;
 
 use super::Session;
 
-pub(super) fn key_status(key: &str, _source: &KeySource) -> String {
+pub(super) fn key_status(key: &str, source: &KeySource) -> String {
     if key.trim().is_empty() {
         return "未配置 API Key".into();
     }
-    "API Key 已配置".into()
+    if matches!(source, KeySource::MigrationPending) {
+        "钥匙串迁移未完成，请检查授权并重新保存密钥".into()
+    } else {
+        "密钥已保存在钥匙串".into()
+    }
 }
 
 impl Session {
@@ -124,8 +128,22 @@ impl Session {
     }
 
     pub fn refresh_mics(&mut self, cx: &mut Context<Self>) {
-        self.available_mics = crate::capture::list_input_devices();
-        cx.notify();
+        if self.mic_refreshing {
+            return;
+        }
+        self.mic_refreshing = true;
+        cx.spawn(async move |this, cx| {
+            let devices = cx
+                .background_executor()
+                .spawn(async { crate::capture::list_input_devices() })
+                .await;
+            let _ = this.update(cx, |s, cx| {
+                s.available_mics = devices;
+                s.mic_refreshing = false;
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub fn toggle_mic_test(&mut self, cx: &mut Context<Self>) {
@@ -148,103 +166,118 @@ impl Session {
         cx.notify();
     }
 
-    pub fn set_api_base_url(&mut self, url: &str, cx: &mut Context<Self>) {
-        let url = url.trim();
-        self.api_base_url = if url.is_empty() {
-            gateway::DEFAULT_BASE_URL.to_string()
-        } else {
-            url.to_string()
-        };
-        if let Ok(store) = self.store.lock() {
-            let _ = store.set_api_base_url(&self.api_base_url);
-        }
-        cx.notify();
-    }
-
     pub fn set_transcribe_model(&mut self, model: &str, cx: &mut Context<Self>) {
         let model = model.trim();
-        self.transcribe_model = if model.is_empty() {
-            gateway::TRANSCRIBE_MODEL.to_string()
+        self.connections.transcribe_model = if model.is_empty() {
+            if self.connections.kind == crate::providers::ProviderKind::OpenRouter {
+                "openai/whisper-large-v3".into()
+            } else {
+                gateway::TRANSCRIBE_MODEL.to_string()
+            }
         } else {
             model.to_string()
         };
-        if let Ok(store) = self.store.lock() {
-            let _ = store.set_transcribe_model(&self.transcribe_model);
-        }
+        self.save_profile();
         cx.notify();
     }
 
     pub fn set_polish_model(&mut self, model: &str, cx: &mut Context<Self>) {
         let model = model.trim();
-        self.polish_model = if model.is_empty() {
-            gateway::POLISH_MODEL.to_string()
+        self.connections.polish_model = if model.is_empty() {
+            if self.connections.kind == crate::providers::ProviderKind::OpenRouter {
+                "openai/gpt-4o-mini".into()
+            } else {
+                gateway::POLISH_MODEL.to_string()
+            }
         } else {
             model.to_string()
         };
-        if let Ok(store) = self.store.lock() {
-            let _ = store.set_polish_model(&self.polish_model);
-        }
+        self.save_profile();
         cx.notify();
     }
 
     pub fn test_gateway(&mut self, cx: &mut Context<Self>) {
-        if self.gateway_testing {
+        if self.connections.gateway_testing {
             return;
         }
-        let base_url = self.api_base_url.clone();
-        let key = self.key.clone();
-        let model = self.polish_model.clone();
-        self.gateway_testing = true;
-        self.gateway_test_status = None;
+        let base_url = self.connections.kind.base().to_string();
+        let key = self.connections.key.clone();
+        let model = self.connections.polish_model.clone();
+        let kind = self.connections.kind;
+        self.connections.gateway_testing = true;
+        self.connections.gateway_test_status = None;
         cx.notify();
+        let model_for_status = model.clone();
+        let revision = self.connections.revision;
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_executor()
                 .spawn(async move { gateway::test_connection(&base_url, &key, &model) })
                 .await;
             let _ = this.update(cx, |session, cx| {
-                session.gateway_testing = false;
-                session.gateway_test_status = Some(match res {
-                    Ok(ms) => (true, format!("已连通，延迟 {ms} ms")),
+                session.connections.gateway_testing = false;
+                if session.connections.revision != revision
+                    || session.connections.kind != kind
+                    || session.connections.polish_model != model_for_status
+                {
+                    cx.notify();
+                    return;
+                }
+                let result = match res {
+                    Ok(ms) => (true, format!("润色模型已连通，延迟 {ms} ms")),
                     Err(err) => (false, err),
-                });
+                };
+                session.connections.checks[kind.index()].polishing = Some(result.clone());
+                session.connections.gateway_test_status = Some(result);
                 cx.notify();
             });
         })
         .detach();
     }
 
-    #[allow(dead_code)]
-    pub fn reload_key(&mut self, cx: &mut Context<Self>) {
-        let (key, source) = secrets::load_key();
-        let _ = (TRANSCRIBE_MODEL, POLISH_MODEL);
-        self.key = key;
-        self.key_status = key_status(&self.key, &source);
-        cx.notify();
-    }
-
     pub fn save_key(&mut self, value: &str, cx: &mut Context<Self>) {
         let value = value.trim();
         if value.is_empty() {
-            self.key_status = "先粘贴 API Key。".into();
+            self.connections.key_status = "请先填写密钥".into();
             cx.notify();
             return;
         }
-        match secrets::save_key(value) {
-            Ok(_) => {
-                self.key = value.to_string();
-                self.key_status = "API Key 已配置".into();
+        match secrets::save_provider(self.connections.kind, value) {
+            Ok(()) => {
+                self.invalidate_connection_checks();
+                self.connections.key = value.into();
+                self.connections.provider_keys[if self.connections.kind
+                    == crate::providers::ProviderKind::Vercel
+                {
+                    0
+                } else {
+                    1
+                }] = value.into();
+                self.connections.key_status = "密钥已保存在钥匙串".into();
+                self.connections.gateway_test_status = None;
             }
-            Err(err) => self.key_status = format!("无法保存：{err}"),
+            Err(err) => self.connections.key_status = err,
         }
         cx.notify();
     }
-
     pub fn clear_key(&mut self, cx: &mut Context<Self>) {
-        secrets::clear_key();
-        self.key = String::new();
-        self.key_status = "未配置 API Key".into();
-        self.gateway_test_status = None;
+        match secrets::clear_provider(self.connections.kind) {
+            Ok(()) => {
+                self.invalidate_connection_checks();
+                self.connections.key.clear();
+                self.connections.provider_keys[if self.connections.kind
+                    == crate::providers::ProviderKind::Vercel
+                {
+                    0
+                } else {
+                    1
+                }]
+                .clear();
+                self.connections.key_status = "未配置当前渠道密钥".into();
+                self.connections.gateway_test_status = None;
+            }
+            Err(err) => self.connections.key_status = err,
+        }
         cx.notify();
     }
 }

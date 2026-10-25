@@ -5,7 +5,8 @@ use std::time::Instant;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Stream;
 
-use crate::audio::{self, Recorded};
+use crate::audio;
+use crate::tasks::{AudioWriter, CaptureResult, Task, TaskConfig};
 
 /// Ten samples, mirrored across the centre when drawn, so the HUD shows a
 /// symmetric waveform rather than a bar chart.
@@ -47,24 +48,31 @@ pub fn list_input_devices() -> Vec<String> {
 
 pub struct ActiveRecording {
     stream: Stream,
-    samples: Arc<Mutex<Vec<f32>>>,
-    channels: u16,
-    sample_rate: u32,
+    writer: Option<AudioWriter>,
+    task: Option<Task>,
+    error: Arc<Mutex<Option<String>>>,
+    last_data: Arc<Mutex<Instant>>,
     started: Instant,
 }
 
 impl ActiveRecording {
     pub fn start_with_device(preferred: Option<&str>) -> Result<Self, String> {
+        Self::start(preferred, None)
+    }
+
+    pub fn start_saved(preferred: Option<&str>, config: TaskConfig) -> Result<Self, String> {
+        Self::start(preferred, Some(config))
+    }
+
+    fn start(preferred: Option<&str>, task_config: Option<TaskConfig>) -> Result<Self, String> {
         let host = cpal::default_host();
         let device = preferred
             .map(str::trim)
             .filter(|name| !name.is_empty())
             .and_then(|name| {
-                host.input_devices().ok()?.find(|dev| {
-                    dev.name()
-                        .map(|n| n.trim() == name)
-                        .unwrap_or(false)
-                })
+                host.input_devices()
+                    .ok()?
+                    .find(|dev| dev.name().map(|n| n.trim() == name).unwrap_or(false))
             })
             .or_else(|| host.default_input_device())
             .ok_or_else(|| "没有找到麦克风".to_string())?;
@@ -74,16 +82,43 @@ impl ActiveRecording {
             .map_err(|err| format!("无法打开麦克风：{err}"))?;
         let channels = config.channels();
         let sample_rate = config.sample_rate().0;
-        let samples = Arc::new(Mutex::new(Vec::<f32>::new()));
-        let writer = Arc::clone(&samples);
-        let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => build::<f32>(&device, &config.into(), writer, |value| value)?,
-            cpal::SampleFormat::I16 => {
-                build::<i16>(&device, &config.into(), writer, |value| value as f32 / i16::MAX as f32)?
-            }
-            cpal::SampleFormat::U16 => build::<u16>(&device, &config.into(), writer, |value| {
-                (value as f32 / u16::MAX as f32) * 2.0 - 1.0
-            })?,
+        let task = task_config
+            .map(|cfg| Task::new(channels, sample_rate, cfg))
+            .transpose()?;
+        let writer = task.as_ref().map(AudioWriter::start).transpose()?;
+        let error = writer
+            .as_ref()
+            .map(|w| w.error.clone())
+            .unwrap_or_else(|| Arc::new(Mutex::new(None)));
+        let last_data = Arc::new(Mutex::new(Instant::now()));
+        let sender = writer.as_ref().map(AudioWriter::sender);
+        let sample_format = config.sample_format();
+        let config = config.config();
+        let stream = match sample_format {
+            cpal::SampleFormat::F32 => build::<f32>(
+                &device,
+                &config,
+                sender,
+                error.clone(),
+                last_data.clone(),
+                |v| v,
+            )?,
+            cpal::SampleFormat::I16 => build::<i16>(
+                &device,
+                &config,
+                sender,
+                error.clone(),
+                last_data.clone(),
+                |v| v as f32 / i16::MAX as f32,
+            )?,
+            cpal::SampleFormat::U16 => build::<u16>(
+                &device,
+                &config,
+                sender,
+                error.clone(),
+                last_data.clone(),
+                |v| (v as f32 / u16::MAX as f32) * 2.0 - 1.0,
+            )?,
             other => return Err(format!("不支持的麦克风格式：{other:?}")),
         };
         stream
@@ -91,25 +126,42 @@ impl ActiveRecording {
             .map_err(|err| format!("麦克风没有开始录音：{err}"))?;
         Ok(Self {
             stream,
-            samples,
-            channels,
-            sample_rate,
+            writer,
+            task,
+            error,
+            last_data,
             started: Instant::now(),
         })
     }
 
-    pub fn finish(self) -> Recorded {
+    pub fn finish(self) -> Option<CaptureResult> {
         drop(self.stream);
         LEVEL.store(0, Ordering::Relaxed);
         if let Ok(mut bars) = WAVE.lock() {
             *bars = [0.0; WAVE_BARS];
         }
-        let samples = self.samples.lock().map(|guard| guard.clone()).unwrap_or_default();
-        Recorded {
-            samples,
-            channels: self.channels,
-            sample_rate: self.sample_rate,
+        self.writer
+            .zip(self.task)
+            .map(|(writer, task)| writer.finish(task))
+    }
+
+    pub fn task_id(&self) -> Option<String> {
+        self.task.as_ref().map(|t| t.id.clone())
+    }
+    pub fn error(&self) -> Option<String> {
+        if let Ok(error) = self.error.lock() {
+            if error.is_some() {
+                return error.clone();
+            }
         }
+        if self
+            .last_data
+            .lock()
+            .is_ok_and(|last| last.elapsed().as_secs() >= 5)
+        {
+            return Some("麦克风已停止提供音频，已保存的部分可以恢复".into());
+        }
+        None
     }
 
     pub fn elapsed(&self) -> std::time::Duration {
@@ -120,12 +172,15 @@ impl ActiveRecording {
 fn build<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
-    samples: Arc<Mutex<Vec<f32>>>,
+    sender: Option<std::sync::mpsc::SyncSender<Vec<f32>>>,
+    error: Arc<Mutex<Option<String>>>,
+    last_data: Arc<Mutex<Instant>>,
     convert: fn(T) -> f32,
 ) -> Result<Stream, String>
 where
     T: cpal::SizedSample + Send + 'static,
 {
+    let stream_error = error.clone();
     device
         .build_input_stream(
             config,
@@ -133,11 +188,22 @@ where
                 let converted: Vec<f32> = data.iter().copied().map(convert).collect();
                 LEVEL.store(audio::rms(&converted).to_bits(), Ordering::Relaxed);
                 push_wave(&converted);
-                if let Ok(mut buffer) = samples.lock() {
-                    buffer.extend(converted);
+                if let Ok(mut last) = last_data.lock() {
+                    *last = Instant::now();
+                }
+                if let Some(sender) = &sender {
+                    if sender.try_send(converted).is_err() {
+                        if let Ok(mut e) = error.lock() {
+                            *e = Some("录音缓存写入跟不上，已停止录音；可恢复已保存内容".into());
+                        }
+                    }
                 }
             },
-            |err| eprintln!("麦克风中断：{err}"),
+            move |_err| {
+                if let Ok(mut e) = stream_error.lock() {
+                    *e = Some("麦克风中断，已保存的部分可以恢复".into());
+                }
+            },
             None,
         )
         .map_err(|err| format!("无法建立录音：{err}"))

@@ -2,16 +2,19 @@ pub mod components;
 pub mod dictionary;
 pub mod history;
 pub mod overview;
+mod providers;
 pub mod settings;
+mod setup;
 
 use std::time::Duration;
 
 use gpui_kit::assets::IconName as LucideIcon;
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::component::Icon;
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, px, rems,
+    div, px, rems, Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
 use crate::session::{Phase, Session};
@@ -53,8 +56,12 @@ pub const DEFAULT_DICT_LIMIT: usize = 50;
 pub struct SettingsView {
     pub(crate) session: Entity<Session>,
     pub active_tab: NavTab,
+    pub(crate) settings_section: settings::SettingsSection,
+    pub(crate) models_expanded: bool,
     pub(crate) key_input: Entity<InputState>,
-    pub(crate) base_url_input: Entity<InputState>,
+    pub(crate) transcribe_model_input: Entity<InputState>,
+    pub(crate) polish_model_input: Entity<InputState>,
+    pub(crate) recovery_limit: usize,
     pub(crate) phrase_input: Entity<InputState>,
     #[allow(dead_code)]
     pub(crate) studio_input: Entity<InputState>,
@@ -84,7 +91,8 @@ impl SettingsView {
     pub fn new(
         session: Entity<Session>,
         key_input: Entity<InputState>,
-        base_url_input: Entity<InputState>,
+        transcribe_model_input: Entity<InputState>,
+        polish_model_input: Entity<InputState>,
         phrase_input: Entity<InputState>,
         studio_input: Entity<InputState>,
         history_search_input: Entity<InputState>,
@@ -93,25 +101,16 @@ impl SettingsView {
         studio_fix_input: Entity<TextareaState>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let key_editing = !session.read(cx).has_key();
+        let key_editing = session.read(cx).connections.key.is_empty();
         cx.observe(&session, |_, _, cx| cx.notify()).detach();
         cx.subscribe(&key_input, |view, input, event, cx| {
             if matches!(event, InputEvent::PressEnter { .. }) {
                 let value = input.read(cx).value();
                 view.session
                     .update(cx, |session, cx| session.save_key(value.as_ref(), cx));
-                if view.session.read(cx).has_key() {
+                if !view.session.read(cx).connections.key.is_empty() {
                     view.key_editing = false;
                 }
-                cx.notify();
-            }
-        })
-        .detach();
-        cx.subscribe(&base_url_input, |view, input, event, cx| {
-            if matches!(event, InputEvent::PressEnter { .. }) {
-                let value = input.read(cx).value();
-                view.session
-                    .update(cx, |session, cx| session.set_api_base_url(value.as_ref(), cx));
                 cx.notify();
             }
         })
@@ -143,8 +142,12 @@ impl SettingsView {
         Self {
             session,
             active_tab: NavTab::Overview,
+            settings_section: Default::default(),
+            models_expanded: false,
             key_input,
-            base_url_input,
+            transcribe_model_input,
+            polish_model_input,
+            recovery_limit: 25,
             phrase_input,
             studio_input,
             history_search_input,
@@ -199,12 +202,7 @@ impl SettingsView {
     }
 
     #[allow(dead_code)]
-    pub fn begin_studio_fix(
-        &mut self,
-        text: &str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn begin_studio_fix(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.studio_fix_open = true;
         self.studio_fix_input.update(cx, |input, cx| {
             input.set_value(text, window, cx);
@@ -278,6 +276,7 @@ impl Render for SettingsView {
                 div()
                     .w(px(216.0))
                     .h_full()
+                    .min_h(px(0.0))
                     .flex()
                     .flex_col()
                     .justify_between()
@@ -445,10 +444,17 @@ impl Render for SettingsView {
                             )
                             .child(status_pill(&shown_phase, elapsed, cx)),
                     )
+                    .when(active_tab == NavTab::Settings, |col| {
+                        col.child(self.settings_navigation(cx))
+                    })
                     .child(
                         div()
-                            .id(SharedString::from(format!("scroll-{active_tab:?}")))
+                            .id(SharedString::from(format!(
+                                "scroll-{active_tab:?}-{:?}",
+                                self.settings_section
+                            )))
                             .flex_1()
+                            .min_h(px(0.0))
                             .overflow_y_scroll()
                             .px(px(28.0))
                             .py(px(22.0))

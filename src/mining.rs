@@ -307,7 +307,8 @@ pub fn parse_glossary(raw: &str, rows: &[MiningRow], existing: &[String]) -> Vec
         };
         let shape = shape_prior(&phrase);
         let score = score_for(confidence, sessions, apps, shape, now);
-        let auto_accept = should_auto_accept(kind, CandidateSource::Llm, confidence, &phrase, shape);
+        let auto_accept =
+            should_auto_accept(kind, CandidateSource::Llm, confidence, &phrase, shape);
 
         let draft = CandidateDraft {
             phrase,
@@ -333,7 +334,11 @@ pub fn parse_glossary(raw: &str, rows: &[MiningRow], existing: &[String]) -> Vec
         b.score
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(|| {
+                b.confidence
+                    .partial_cmp(&a.confidence)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     });
     result
 }
@@ -503,12 +508,7 @@ pub fn learn_from_edit(
     learning
 }
 
-fn first_change_hunk(
-    before: &str,
-    after: &str,
-    prefix: usize,
-    suffix: usize,
-) -> (String, String) {
+fn first_change_hunk(before: &str, after: &str, prefix: usize, suffix: usize) -> (String, String) {
     let b: Vec<char> = before.chars().collect();
     let a: Vec<char> = after.chars().collect();
     let fallback = (
@@ -530,14 +530,7 @@ fn first_change_hunk(
             }
             if b[i..i + resync] == a[j..j + resync] {
                 let (mut start_b, mut start_a, mut end_b, mut end_a) = (prefix, prefix, i, j);
-                expand_short_hunk(
-                    &b,
-                    &a,
-                    &mut start_b,
-                    &mut start_a,
-                    &mut end_b,
-                    &mut end_a,
-                );
+                expand_short_hunk(&b, &a, &mut start_b, &mut start_a, &mut end_b, &mut end_a);
                 return (
                     b[start_b..end_b].iter().collect(),
                     a[start_a..end_a].iter().collect(),
@@ -597,10 +590,15 @@ fn expand_short_hunk(
         return;
     }
     if changed.is_ascii_alphanumeric() {
-        let is_word = |ch: char| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | '+' | '#');
+        let is_word =
+            |ch: char| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | '+' | '#');
         let mut left_b = *start_b;
         let mut left_a = *start_a;
-        while left_b > 0 && *start_b - left_b < 40 && is_word(b[left_b - 1]) && is_word(a[left_a - 1]) {
+        while left_b > 0
+            && *start_b - left_b < 40
+            && is_word(b[left_b - 1])
+            && is_word(a[left_a - 1])
+        {
             left_b -= 1;
             left_a -= 1;
         }
@@ -698,8 +696,7 @@ pub fn apply_corrections(text: &str, rules: &[CorrectionRule]) -> String {
 
 pub fn normalize_term(raw: &str) -> Option<String> {
     let trimmed = raw.trim().trim_matches(|c: char| {
-        c.is_whitespace()
-            || "，。！？、；：,.!?;:\"'“”‘’()（）[]【】<>《》「」『』".contains(c)
+        c.is_whitespace() || "，。！？、；：,.!?;:\"'“”‘’()（）[]【】<>《》「」『』".contains(c)
     });
     let collapsed = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
     let len = collapsed.chars().count();
@@ -715,7 +712,10 @@ pub fn normalize_term(raw: &str) -> Option<String> {
     if collapsed.starts_with('/') || collapsed.starts_with("~/") {
         return None;
     }
-    if collapsed.chars().all(|c| c.is_ascii_digit() || is_punct(c) || c.is_whitespace()) {
+    if collapsed
+        .chars()
+        .all(|c| c.is_ascii_digit() || is_punct(c) || c.is_whitespace())
+    {
         return None;
     }
     Some(collapsed)
@@ -736,16 +736,24 @@ pub fn is_term_like(term: &str) -> bool {
     if term.split_whitespace().count() > 6 {
         return false;
     }
-    if term.contains('。') || term.contains('！') || term.contains('？') || term.contains('；') {
+    if term.contains('。') || term.contains('！') || term.contains('？') || term.contains('；')
+    {
         return false;
     }
     if term.contains('，') && len > 12 {
         return false;
     }
     if is_all_cjk(&term) {
-        if len > 8 || term.ends_with('的') || term.ends_with('了') || term.ends_with('吗')
-            || term.ends_with('吧') || term.ends_with('呢') || term.ends_with('啊')
-            || term.ends_with('呀') || term.ends_with('哦') || term.ends_with('嗯')
+        if len > 8
+            || term.ends_with('的')
+            || term.ends_with('了')
+            || term.ends_with('吗')
+            || term.ends_with('吧')
+            || term.ends_with('呢')
+            || term.ends_with('啊')
+            || term.ends_with('呀')
+            || term.ends_with('哦')
+            || term.ends_with('嗯')
         {
             return false;
         }
@@ -771,12 +779,7 @@ pub fn shape_prior(term: &str) -> f32 {
         0.95
     } else if has_latin && has_digit {
         0.9
-    } else if has_latin
-        && term
-            .chars()
-            .skip(1)
-            .any(|c| c.is_ascii_uppercase())
-    {
+    } else if has_latin && term.chars().skip(1).any(|c| c.is_ascii_uppercase()) {
         0.85
     } else if has_latin && term.chars().all(|c| !c.is_ascii_lowercase()) {
         0.75
@@ -815,7 +818,9 @@ pub fn should_auto_accept(
         return confidence >= 0.8;
     }
     let cjk_len = phrase.chars().filter(|c| is_cjk(*c)).count();
-    let mixed_or_latin = phrase.chars().any(|c| c.is_ascii_alphabetic() || c.is_ascii_digit());
+    let mixed_or_latin = phrase
+        .chars()
+        .any(|c| c.is_ascii_alphabetic() || c.is_ascii_digit());
     match kind {
         TermKind::Company | TermKind::Project | TermKind::File => confidence >= 0.70,
         TermKind::Product | TermKind::Person => {
@@ -860,7 +865,9 @@ fn merge_draft(map: &mut HashMap<String, CandidateDraft>, draft: CandidateDraft)
 
 fn dedupe_learning(learning: &mut EditLearning) {
     let mut seen = std::collections::HashSet::new();
-    learning.terms.retain(|term| seen.insert(term.phrase_key.clone()));
+    learning
+        .terms
+        .retain(|term| seen.insert(term.phrase_key.clone()));
     let mut corrections = std::collections::HashSet::new();
     learning
         .corrections
@@ -1107,8 +1114,26 @@ fn is_punct(ch: char) -> bool {
     ch.is_ascii_punctuation()
         || matches!(
             ch,
-            '，' | '。' | '！' | '？' | '、' | '；' | '：' | '“' | '”' | '‘' | '’'
-                | '（' | '）' | '【' | '】' | '《' | '》' | '「' | '」' | '『' | '』'
+            '，' | '。'
+                | '！'
+                | '？'
+                | '、'
+                | '；'
+                | '：'
+                | '“'
+                | '”'
+                | '‘'
+                | '’'
+                | '（'
+                | '）'
+                | '【'
+                | '】'
+                | '《'
+                | '》'
+                | '「'
+                | '」'
+                | '『'
+                | '』'
         )
 }
 
@@ -1122,36 +1147,286 @@ fn now() -> i64 {
 const COMMON_CJK_CHARS: &str = "的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处队南给色光门即保治北造百规热领七海口东导器压志世金增争济阶油思术极交受联什认六共权收证改清己美再采转更单风切打白教速花带安场身车例真务具万每目至达走积示议声报斗完类八离华名确才科张信马节话米整空元况今集温传土许步群广石记需段研界拉林律叫且究观越织装影算低持音众书布复容儿须际商非验连断深难近矿千周委素技备半办青省列习响约支般史感劳便团往酸历市克何除消构府称太准精值号率族维划选标写存候毛亲快效斯院查江型眼王按格养易置派层片始却专状育厂京识适属圆包火住调满县局照参红细引听该铁价严龙飞";
 
 const SKIP_EN: &[&str] = &[
-    "the", "and", "for", "with", "that", "this", "you", "are", "was", "have", "not", "but",
-    "can", "will", "just", "from", "they", "what", "when", "where", "which", "how", "why",
-    "git", "pr", "prs", "api", "url", "uri", "http", "https", "json", "yaml", "html", "css",
-    "js", "ts", "jsx", "tsx", "ui", "ux", "ai", "ml", "llm", "sdk", "cli", "ide", "os",
-    "mac", "macos", "windows", "linux", "app", "apps", "bug", "bugs", "code", "test", "tests",
-    "build", "deploy", "server", "client", "data", "file", "files", "user", "users", "name",
-    "value", "type", "list", "item", "page", "view", "model", "prompt", "token", "agent",
-    "skill", "icon", "badge", "banner", "button", "input", "output", "error", "warning",
-    "log", "config", "setup", "install", "update", "version", "feature", "design", "demo",
-    "sample", "example", "issue", "repo", "branch", "commit", "merge", "push", "pull",
-    "request", "response", "cache", "cloud", "local", "remote", "frontend", "backend",
-    "framework", "library", "package", "module", "plugin", "theme", "layout", "component",
-    "state", "props", "hook", "route", "router", "endpoint", "database", "query", "table",
-    "row", "column", "index", "key", "debug", "release", "main", "dev", "prod", "todo",
-    "fixme", "ok", "yes", "no",
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "you",
+    "are",
+    "was",
+    "have",
+    "not",
+    "but",
+    "can",
+    "will",
+    "just",
+    "from",
+    "they",
+    "what",
+    "when",
+    "where",
+    "which",
+    "how",
+    "why",
+    "git",
+    "pr",
+    "prs",
+    "api",
+    "url",
+    "uri",
+    "http",
+    "https",
+    "json",
+    "yaml",
+    "html",
+    "css",
+    "js",
+    "ts",
+    "jsx",
+    "tsx",
+    "ui",
+    "ux",
+    "ai",
+    "ml",
+    "llm",
+    "sdk",
+    "cli",
+    "ide",
+    "os",
+    "mac",
+    "macos",
+    "windows",
+    "linux",
+    "app",
+    "apps",
+    "bug",
+    "bugs",
+    "code",
+    "test",
+    "tests",
+    "build",
+    "deploy",
+    "server",
+    "client",
+    "data",
+    "file",
+    "files",
+    "user",
+    "users",
+    "name",
+    "value",
+    "type",
+    "list",
+    "item",
+    "page",
+    "view",
+    "model",
+    "prompt",
+    "token",
+    "agent",
+    "skill",
+    "icon",
+    "badge",
+    "banner",
+    "button",
+    "input",
+    "output",
+    "error",
+    "warning",
+    "log",
+    "config",
+    "setup",
+    "install",
+    "update",
+    "version",
+    "feature",
+    "design",
+    "demo",
+    "sample",
+    "example",
+    "issue",
+    "repo",
+    "branch",
+    "commit",
+    "merge",
+    "push",
+    "pull",
+    "request",
+    "response",
+    "cache",
+    "cloud",
+    "local",
+    "remote",
+    "frontend",
+    "backend",
+    "framework",
+    "library",
+    "package",
+    "module",
+    "plugin",
+    "theme",
+    "layout",
+    "component",
+    "state",
+    "props",
+    "hook",
+    "route",
+    "router",
+    "endpoint",
+    "database",
+    "query",
+    "table",
+    "row",
+    "column",
+    "index",
+    "key",
+    "debug",
+    "release",
+    "main",
+    "dev",
+    "prod",
+    "todo",
+    "fixme",
+    "ok",
+    "yes",
+    "no",
 ];
 
 const SKIP_CJK: &[&str] = &[
-    "我们", "你们", "他们", "这个", "那个", "这些", "那些", "什么", "怎么", "为什么", "因为",
-    "所以", "但是", "然后", "就是", "可以", "需要", "希望", "觉得", "现在", "已经", "还是",
-    "这样", "那样", "一下", "一些", "非常", "比较", "时候", "地方", "东西", "内容", "问题",
-    "方案", "效果", "功能", "时间", "应用", "工作", "项目", "部分", "方面", "情况", "感觉",
-    "意思", "事情", "大家", "自己", "没有", "一个", "不是", "这么", "那么", "如果", "而且",
-    "或者", "以及", "关于", "对于", "通过", "进行", "开始", "结束", "继续", "直接", "具体",
-    "主要", "重要", "简单", "复杂", "可能", "应该", "必须", "正在", "一直", "一起", "一样",
-    "不同", "其他", "另外", "最后", "首先", "其次", "当然", "其实", "确实", "真的", "特别",
-    "稍微", "大概", "类似", "相关", "目前", "当前", "之前", "之后", "里面", "上面", "下面",
-    "外面", "前面", "后面", "中间", "旁边", "这里", "那里", "哪里", "如何", "为了", "已经",
-    "还有", "以及", "这个", "那个", "的话", "来说", "而言", "一下", "一点", "有点", "很多",
-    "很多", "几个", "两个", "三个", "第一", "第二", "第三", "最后", "然后", "接着", "同时",
+    "我们",
+    "你们",
+    "他们",
+    "这个",
+    "那个",
+    "这些",
+    "那些",
+    "什么",
+    "怎么",
+    "为什么",
+    "因为",
+    "所以",
+    "但是",
+    "然后",
+    "就是",
+    "可以",
+    "需要",
+    "希望",
+    "觉得",
+    "现在",
+    "已经",
+    "还是",
+    "这样",
+    "那样",
+    "一下",
+    "一些",
+    "非常",
+    "比较",
+    "时候",
+    "地方",
+    "东西",
+    "内容",
+    "问题",
+    "方案",
+    "效果",
+    "功能",
+    "时间",
+    "应用",
+    "工作",
+    "项目",
+    "部分",
+    "方面",
+    "情况",
+    "感觉",
+    "意思",
+    "事情",
+    "大家",
+    "自己",
+    "没有",
+    "一个",
+    "不是",
+    "这么",
+    "那么",
+    "如果",
+    "而且",
+    "或者",
+    "以及",
+    "关于",
+    "对于",
+    "通过",
+    "进行",
+    "开始",
+    "结束",
+    "继续",
+    "直接",
+    "具体",
+    "主要",
+    "重要",
+    "简单",
+    "复杂",
+    "可能",
+    "应该",
+    "必须",
+    "正在",
+    "一直",
+    "一起",
+    "一样",
+    "不同",
+    "其他",
+    "另外",
+    "最后",
+    "首先",
+    "其次",
+    "当然",
+    "其实",
+    "确实",
+    "真的",
+    "特别",
+    "稍微",
+    "大概",
+    "类似",
+    "相关",
+    "目前",
+    "当前",
+    "之前",
+    "之后",
+    "里面",
+    "上面",
+    "下面",
+    "外面",
+    "前面",
+    "后面",
+    "中间",
+    "旁边",
+    "这里",
+    "那里",
+    "哪里",
+    "如何",
+    "为了",
+    "已经",
+    "还有",
+    "以及",
+    "这个",
+    "那个",
+    "的话",
+    "来说",
+    "而言",
+    "一下",
+    "一点",
+    "有点",
+    "很多",
+    "很多",
+    "几个",
+    "两个",
+    "三个",
+    "第一",
+    "第二",
+    "第三",
+    "最后",
+    "然后",
+    "接着",
+    "同时",
 ];
 
 #[cfg(test)]
@@ -1169,7 +1444,11 @@ mod tests {
     #[test]
     fn parses_glossary_and_auto_accepts_conservative_kinds() {
         let rows = vec![
-            row(1, "Orca", "我希望针对豆卡这块能有一些调整，另外 Cloudflare 也要看一下。"),
+            row(
+                1,
+                "Orca",
+                "我希望针对豆卡这块能有一些调整，另外 Cloudflare 也要看一下。",
+            ),
             row(2, "Telegram", "调用 design.md，再检查一下豆卡。"),
         ];
         let raw = r#"{"terms":[
@@ -1223,7 +1502,10 @@ mod tests {
             .corrections
             .iter()
             .any(|item| item.wrong == "斗卡" && item.right == "豆卡"));
-        assert!(!learning.terms.iter().any(|term| term.phrase.contains("明天")));
+        assert!(!learning
+            .terms
+            .iter()
+            .any(|term| term.phrase.contains("明天")));
     }
 
     #[test]
@@ -1240,7 +1522,10 @@ mod tests {
             wrong: "git".into(),
             right: "Git".into(),
         }];
-        assert_eq!(apply_corrections("用 git 管理，不是 github。", &rules), "用 Git 管理，不是 github。");
+        assert_eq!(
+            apply_corrections("用 git 管理，不是 github。", &rules),
+            "用 Git 管理，不是 github。"
+        );
     }
 
     #[test]

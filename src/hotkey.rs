@@ -55,7 +55,6 @@ pub fn hotkey_badge(code: i64) -> &'static str {
 }
 
 static TAP: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
-static TAP_ACTIVE: AtomicBool = AtomicBool::new(false);
 static TARGET_KEYCODE: AtomicI64 = AtomicI64::new(KEY_RIGHT_OPTION);
 static TRIGGER_MODE: AtomicU8 = AtomicU8::new(0); // 0 = Toggle, 1 = Hold
 static WAS_DOWN: AtomicBool = AtomicBool::new(false);
@@ -108,10 +107,6 @@ pub fn request_accessibility_permission() -> bool {
     }
 }
 
-pub fn is_tap_active() -> bool {
-    TAP_ACTIVE.load(Ordering::Relaxed)
-}
-
 pub fn listen(initial_code: i64, initial_mode: TriggerMode) -> mpsc::Receiver<HotkeyEvent> {
     set_hotkey_code(initial_code);
     set_trigger_mode(initial_mode);
@@ -134,19 +129,10 @@ unsafe fn run_loop() {
 
     let mut warned = false;
     loop {
-        let tap = unsafe {
-            CGEventTapCreate(
-                1,
-                0,
-                0,
-                mask,
-                tap_callback,
-                std::ptr::null_mut(),
-            )
-        };
+        let tap = unsafe { CGEventTapCreate(1, 0, 0, mask, tap_callback, std::ptr::null_mut()) };
         if !tap.is_null() {
             TAP.store(tap, Ordering::Relaxed);
-            TAP_ACTIVE.store(true, Ordering::Relaxed);
+
             warned = false;
             unsafe {
                 let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
@@ -155,10 +141,9 @@ unsafe fn run_loop() {
                 CGEventTapEnable(tap, true);
                 CFRunLoopRun();
             }
-            TAP_ACTIVE.store(false, Ordering::Relaxed);
+
             TAP.store(std::ptr::null_mut(), Ordering::Relaxed);
         } else {
-            TAP_ACTIVE.store(false, Ordering::Relaxed);
             if !warned {
                 eprintln!("热键监听等待辅助功能权限。请在系统设置的辅助功能里允许 Notype。");
                 warned = true;

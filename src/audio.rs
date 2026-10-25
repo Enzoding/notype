@@ -67,15 +67,6 @@ pub struct Recorded {
 }
 
 impl Recorded {
-    pub fn duration_secs(&self) -> f32 {
-        let frames = self.samples.len() as f32 / self.channels.max(1) as f32;
-        if self.sample_rate == 0 {
-            0.0
-        } else {
-            frames / self.sample_rate as f32
-        }
-    }
-
     pub fn to_wav(&self) -> Vec<u8> {
         let pcm = resample_mono_i16(&self.samples, self.channels, self.sample_rate, TARGET_RATE);
         encode_wav(&pcm, TARGET_RATE)

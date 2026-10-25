@@ -1,83 +1,28 @@
-use std::sync::mpsc::{self, TryRecvError};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
-use gpui_kit::Context;
-
+use super::types::{Notice, Phase, Stage};
+use super::Session;
 use crate::audio::{self, SoundCue};
 use crate::capture::ActiveRecording;
 use crate::front::front_bundle_id;
-use crate::gateway;
 use crate::hotkey::{self, HotkeyEvent};
-use crate::mining;
 use crate::paste::{self, InsertResult};
 use crate::polish::{self, PolishOptions};
-use crate::store::Store;
-
-use super::types::{Notice, Phase, Stage};
-use super::Session;
-
-enum Outcome {
-    Failed(String),
-    Ready {
-        transcript: String,
-        paste_text: String,
-        archive_polished: String,
-        polish_failed: bool,
-    },
-}
-
-fn run_pipeline(
-    base_url: &str,
-    key: &str,
-    wav: &[u8],
-    phrases: &[String],
-    corrections: &[mining::CorrectionRule],
-    polish_opts: Option<&PolishOptions>,
-    transcribe_model: &str,
-    polish_model: &str,
-    stage: &(dyn Fn(Stage) + Send + Sync),
-) -> Outcome {
-    stage(Stage::Transcribe);
-    let transcript = match gateway::transcribe_with_model(base_url, key, wav, phrases, transcribe_model) {
-        Ok(text) => text,
-        Err(err) => return Outcome::Failed(err),
-    };
-    if transcript.trim().is_empty() {
-        return Outcome::Failed("没有识别到语音内容".into());
-    }
-    let corrected = mining::apply_corrections(&transcript, corrections);
-    let (paste_text, archive_polished, polish_failed) = match polish_opts {
-        Some(opts) => {
-            stage(Stage::Polish);
-            match gateway::polish_with_options(base_url, key, &corrected, phrases, opts, polish_model) {
-                Ok(text) => (text.clone(), text, false),
-                Err(_) => (corrected.clone(), String::new(), true),
-            }
-        }
-        None => (corrected.clone(), String::new(), false),
-    };
-    stage(Stage::Insert);
-    Outcome::Ready {
-        transcript,
-        paste_text,
-        archive_polished,
-        polish_failed,
-    }
-}
+use crate::tasks::{self, CaptureResult, Task, TaskConfig};
+use gpui_kit::Context;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, TryRecvError};
+use std::sync::Arc;
+use std::time::Duration;
 
 impl Session {
     pub fn has_key(&self) -> bool {
-        !self.key.is_empty()
+        !self.provider_key(self.connections.kind).is_empty()
     }
-
     pub fn elapsed(&self) -> Duration {
         self.recording
             .as_ref()
-            .map(|recording| recording.elapsed())
+            .map(|r| r.elapsed())
             .unwrap_or_default()
     }
-
     pub fn handle_hotkey_event(&mut self, ev: HotkeyEvent, cx: &mut Context<Self>) {
         match ev {
             HotkeyEvent::Toggle => self.toggle(cx),
@@ -94,7 +39,6 @@ impl Session {
             HotkeyEvent::Cancel => self.cancel_active(cx),
         }
     }
-
     pub fn toggle(&mut self, cx: &mut Context<Self>) {
         if self.recording.is_some() {
             self.finish(cx);
@@ -102,40 +46,70 @@ impl Session {
             self.begin(false, cx);
         }
     }
-
     pub fn cancel_recording(&mut self, cx: &mut Context<Self>) {
-        let Some(recording) = self.recording.take() else {
-            return;
-        };
-        drop(recording.finish());
+        self.interrupt_recording("已取消，录音草稿保留七天，可在设置中恢复或删除", cx);
+    }
+    pub(super) fn interrupt_recording(&mut self, message: &str, cx: &mut Context<Self>) {
+        if let Some(recording) = self.recording.take() {
+            if let Some(capture) = recording.finish() {
+                let message = message.to_string();
+                cx.spawn(async move |this, cx| {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let id = capture.task.id.clone();
+                            match capture.finish() {
+                                Ok(mut task) => {
+                                    task.phase = "已中断，可恢复".into();
+                                    task.error = message;
+                                    task.save()
+                                }
+                                Err(error) => {
+                                    let mut task = Task::load(&id)?;
+                                    task.phase = "录音保存异常".into();
+                                    task.error = error;
+                                    task.save()
+                                }
+                            }
+                        })
+                        .await;
+                    let _ = this.update(cx, |s, cx| {
+                        if let Err(err) = result {
+                            s.recovery_status = err;
+                        }
+                        s.refresh_recovery(cx);
+                    });
+                })
+                .detach();
+            }
+        }
+        self.generation = self.generation.wrapping_add(1);
         self.studio_dictating = false;
+        self.active_task = None;
         self.level = 0.0;
         self.wave = [0.0; crate::capture::WAVE_BARS];
-        self.note(Notice::Warn("已取消".into()), cx);
+        self.note(Notice::Warn(message.into()), cx);
     }
-
-    /// Drops an in-progress recording or transcription without pasting.
     pub fn cancel_active(&mut self, cx: &mut Context<Self>) {
         if self.recording.is_some() {
             self.cancel_recording(cx);
             return;
         }
         if matches!(self.phase, Phase::Working(_)) {
+            if let Some(cancelled) = self.cancelled.take() {
+                cancelled.store(true, Ordering::Release);
+            }
             self.generation = self.generation.wrapping_add(1);
             self.stages = None;
             self.working_progress = 0.0;
-            self.level = 0.0;
-            self.wave = [0.0; crate::capture::WAVE_BARS];
-            self.note(Notice::Warn("已取消".into()), cx);
+            self.active_task = None;
+            self.note(Notice::Warn("已取消，已保存内容可在设置中恢复".into()), cx);
+            self.refresh_recovery(cx);
         }
     }
-
     pub(super) fn begin(&mut self, for_studio: bool, cx: &mut Context<Self>) {
-        if self.key.is_empty() {
-            self.note(
-                Notice::Error("请先在设置中填写并保存 API Key".into()),
-                cx,
-            );
+        if self.provider_key(self.connections.kind).is_empty() {
+            self.note(Notice::Error("请先配置转写渠道的密钥".into()), cx);
             return;
         }
         if let Some(stream) = self.mic_test_stream.take() {
@@ -144,38 +118,56 @@ impl Session {
         }
         self.studio_dictating = for_studio;
         self.active_bundle = if for_studio {
-            "notype.studio".to_string()
+            "notype.studio".into()
         } else {
             front_bundle_id()
         };
         self.generation = self.generation.wrapping_add(1);
         let generation = self.generation;
-        self.level = 0.0;
-        self.wave = [0.0; crate::capture::WAVE_BARS];
-        self.exiting = false;
-        self.appearance = self.appearance.wrapping_add(1);
-        self.phase = Phase::Listening;
-        self.sync_voice(cx);
-        if self.sound_feedback {
-            audio::play_cue(SoundCue::Start);
-        }
-        cx.notify();
-
+        let resolved = if for_studio {
+            Some(self.studio_mode)
+        } else {
+            polish::resolve_mode(&self.polish_strategy, &self.active_bundle)
+        };
+        let config = TaskConfig {
+            transcribe: self.profile(self.connections.kind),
+            polish: self.profile(self.connections.kind),
+            options: resolved.map(|mode| PolishOptions {
+                mode,
+                custom_prompt: self.custom_prompt.clone(),
+                space_cjk: self.space_cjk,
+            }),
+            bundle: self.active_bundle.clone(),
+            mode: resolved
+                .map(|m| m.as_str().into())
+                .unwrap_or_else(|| "raw".into()),
+            save_audio: self.save_audio,
+        };
         let preferred = if self.mic_device.is_empty() {
             None
         } else {
             Some(self.mic_device.as_str())
         };
-        match ActiveRecording::start_with_device(preferred) {
+        match ActiveRecording::start_saved(preferred, config) {
             Ok(recording) => {
+                self.active_task = recording.task_id();
                 self.recording = Some(recording);
+                self.level = 0.0;
+                self.wave = [0.0; crate::capture::WAVE_BARS];
+                self.exiting = false;
+                self.appearance = self.appearance.wrapping_add(1);
+                self.phase = Phase::Listening;
+                self.sync_voice(cx);
+                if self.sound_feedback {
+                    audio::play_cue(SoundCue::Start);
+                }
                 cx.spawn(async move |this, cx| {
                     cx.background_executor()
-                        .timer(Duration::from_secs(120))
+                        .timer(Duration::from_secs(tasks::MAX_RECORDING_SECS))
                         .await;
-                    let _ = this.update(cx, |session, cx| {
-                        if session.generation == generation && session.recording.is_some() {
-                            session.finish(cx);
+                    let _ = this.update(cx, |s, cx| {
+                        if s.generation == generation && s.recording.is_some() {
+                            s.finish(cx);
                         }
                     });
                 })
@@ -183,212 +175,240 @@ impl Session {
             }
             Err(err) => {
                 self.studio_dictating = false;
-                if self.sound_feedback {
-                    audio::play_cue(SoundCue::Error);
-                }
                 self.note(Notice::Error(err), cx);
             }
         }
+        cx.notify();
     }
-
     pub(super) fn finish(&mut self, cx: &mut Context<Self>) {
         let Some(recording) = self.recording.take() else {
             return;
         };
         let for_studio = self.studio_dictating;
         self.studio_dictating = false;
-        if recording.elapsed() < Duration::from_millis(300) {
-            drop(recording.finish());
-            self.note(Notice::Warn("录音时间太短了".into()), cx);
+        let short = recording.elapsed() < Duration::from_millis(300);
+        let Some(capture) = recording.finish() else {
+            return;
+        };
+        if short {
+            self.spawn_saved_draft(capture, cx);
+            self.note(Notice::Warn("录音时间太短，已保留草稿".into()), cx);
             return;
         }
         if self.sound_feedback {
             audio::play_cue(SoundCue::Stop);
         }
-        let recorded = recording.finish();
-        let duration_ms = (recorded.duration_secs() * 1000.0).round() as i64;
-        let wav = recorded.to_wav();
-        let bundle_id = if for_studio {
-            "notype.studio".to_string()
-        } else if !self.active_bundle.is_empty() {
-            self.active_bundle.clone()
-        } else {
-            front_bundle_id()
-        };
-        let phrases = self
-            .store
-            .lock()
-            .map(|store| store.phrase_list())
-            .unwrap_or_default();
-        let corrections = self
-            .store
-            .lock()
-            .map(|store| store.corrections())
-            .unwrap_or_default();
-        let base_url = self.api_base_url.clone();
-        let key = self.key.clone();
-        let transcribe_model = self.transcribe_model.clone();
-        let polish_model = self.polish_model.clone();
-        let resolved_mode = if for_studio {
-            Some(self.studio_mode)
-        } else {
-            polish::resolve_mode(&self.polish_strategy, &bundle_id)
-        };
-        let polish_opts = resolved_mode.map(|mode| PolishOptions {
-            mode,
-            custom_prompt: self.custom_prompt.clone(),
-            space_cjk: self.space_cjk,
-        });
-        let mode_tag = resolved_mode
-            .map(|m| m.as_str().to_string())
-            .unwrap_or_else(|| "raw".to_string());
-        let wav_for_task = wav.clone();
-        let generation = self.generation;
-
-        self.level = 0.0;
-        self.wave = [0.0; crate::capture::WAVE_BARS];
-
-        let (sender, receiver) = mpsc::channel::<Stage>();
-        self.stages = Some(receiver);
-        self.exiting = false;
-        self.appearance = self.appearance.wrapping_add(1);
-        self.phase = Phase::Working(Stage::Transcribe);
-        self.working_progress = 0.08;
-        self.sync_voice(cx);
-        cx.notify();
-
-        let store = Arc::clone(&self.store);
+        self.launch_task(Ok(capture), None, for_studio, cx);
+    }
+    fn spawn_saved_draft(&mut self, capture: CaptureResult, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
-            let outcome = cx
+            let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let stage = move |stage: Stage| {
-                        let _ = sender.send(stage);
-                    };
-                    run_pipeline(
-                        &base_url,
-                        &key,
-                        &wav_for_task,
-                        &phrases,
-                        &corrections,
-                        polish_opts.as_ref(),
-                        &transcribe_model,
-                        &polish_model,
-                        &stage,
-                    )
+                    let mut task = capture.finish()?;
+                    task.phase = "录音过短".into();
+                    task.save()
                 })
                 .await;
-            let _ = this.update(cx, |session, cx| {
-                if session.generation != generation || !matches!(session.phase, Phase::Working(_)) {
-                    return;
+            let _ = this.update(cx, |s, cx| {
+                if let Err(e) = result {
+                    s.recovery_status = e;
                 }
-                session.deliver(
-                    outcome,
-                    &bundle_id,
-                    &wav,
-                    duration_ms,
-                    &mode_tag,
-                    for_studio,
-                    &store,
-                    cx,
-                );
+                s.refresh_recovery(cx);
             });
         })
         .detach();
     }
-
-    #[allow(clippy::too_many_arguments)]
-    fn deliver(
+    pub(super) fn launch_task(
         &mut self,
-        outcome: Outcome,
-        bundle_id: &str,
-        wav: &[u8],
-        duration_ms: i64,
-        mode_tag: &str,
+        capture: Result<CaptureResult, String>,
+        recovered: Option<String>,
         for_studio: bool,
-        store: &Arc<Mutex<Store>>,
         cx: &mut Context<Self>,
     ) {
-        self.stages = None;
-        self.working_progress = 1.0;
-        let mut inserted_text = String::new();
-        let mut pasted = false;
-        let mut inserted_row = None;
-        let (notice, saved) = match outcome {
-            Outcome::Failed(message) => {
-                if self.sound_feedback {
-                    audio::play_cue(SoundCue::Error);
-                }
-                (Notice::Error(message), None)
-            }
-            Outcome::Ready {
-                transcript,
-                paste_text,
-                archive_polished,
-                polish_failed,
-            } => {
-                if self.sound_feedback {
-                    audio::play_cue(SoundCue::Done);
-                }
-                let notice = if for_studio {
-                    self.studio_raw = transcript.clone();
-                    self.studio_output = paste_text.clone();
-                    Notice::Done(format!("已转写到演练台 · {} 字", paste_text.chars().count()))
-                } else {
-                    inserted_text = paste_text.clone();
-                    let (inserted, restore) = paste::insert_text(&paste_text);
-                    pasted = matches!(inserted, InsertResult::Pasted);
-                    if let Some(restore) = restore {
-                        cx.spawn(async move |_this, cx| {
-                            cx.background_executor()
-                                .timer(Duration::from_millis(280))
-                                .await;
-                            let _ = cx.update(|_cx| restore.apply());
-                        })
-                        .detach();
-                    }
-                    if polish_failed {
-                        match inserted {
-                            InsertResult::Pasted => Notice::Warn("润色失败，已贴入转写原文".into()),
-                            InsertResult::Copied => Notice::Warn("润色失败，原文已复制".into()),
-                        }
+        let generation = self.generation;
+        let cancelled = Arc::new(AtomicBool::new(false));
+        self.cancelled = Some(cancelled.clone());
+        let all_keys = self.connections.provider_keys.clone();
+        let retry_transcribe = self.profile(self.connections.kind);
+        let retry_polish = self.profile(self.connections.kind);
+        let store = self.store.clone();
+        let (sender, receiver) = mpsc::channel();
+        self.stages = Some(receiver);
+        self.phase = Phase::Working(Stage::Transcribe);
+        self.working_progress = 0.08;
+        self.level = 0.0;
+        self.wave = [0.0; crate::capture::WAVE_BARS];
+        self.sync_voice(cx);
+        cx.notify();
+        let is_recovery = recovered.is_some();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let (phrases, corrections) = {
+                        let db = store.lock().map_err(|_| "历史数据库忙碌")?;
+                        (db.phrase_list(), db.corrections())
+                    };
+                    let mut task = if let Some(id) = recovered {
+                        Task::load(&id)?
                     } else {
-                        match inserted {
-                            InsertResult::Pasted => {
-                                Notice::Done(format!("已贴入 · {} 字", paste_text.chars().count()))
+                        let capture = capture?;
+                        let id = capture.task.id.clone();
+                        match capture.finish() {
+                            Ok(task) => task,
+                            Err(error) => {
+                                let mut task = Task::load(&id)?;
+                                task.phase = "录音保存异常".into();
+                                task.error = error.clone();
+                                task.save()?;
+                                return Err(error);
                             }
-                            InsertResult::Copied => Notice::Copied,
                         }
+                    };
+                    if is_recovery {
+                        if task.transcript.is_empty() {
+                            task.config.transcribe = retry_transcribe;
+                        }
+                        if task.polished.is_empty() {
+                            task.config.polish = retry_polish;
+                        }
+                        task.save()?;
                     }
-                };
-                (notice, Some((transcript, archive_polished)))
-            }
-        };
-        if let Some((transcript, polished)) = saved {
-            if let Ok(store) = store.lock() {
-                if let Ok(row_id) =
-                    store.add_history(bundle_id, &transcript, &polished, duration_ms, mode_tag)
-                {
-                    inserted_row = Some(row_id);
-                    if self.save_audio && !wav.is_empty() {
-                        if store.save_audio_file(row_id, wav).is_ok() {
-                            self.audio_ids.insert(row_id);
+                    let keys = crate::tasks::pipeline::Credentials {
+                        transcribe: all_keys[if task.config.transcribe.kind
+                            == crate::providers::ProviderKind::Vercel
+                        {
+                            0
+                        } else {
+                            1
+                        }]
+                        .clone(),
+                        polish: all_keys[if task.config.polish.kind
+                            == crate::providers::ProviderKind::Vercel
+                        {
+                            0
+                        } else {
+                            1
+                        }]
+                        .clone(),
+                    };
+                    crate::tasks::pipeline::process(
+                        &mut task,
+                        &keys,
+                        &phrases,
+                        &corrections,
+                        &cancelled,
+                        |polish| {
+                            let _ = sender.send(if polish {
+                                Stage::Polish
+                            } else {
+                                Stage::Transcribe
+                            });
+                        },
+                    )?;
+                    if cancelled.load(Ordering::Acquire) {
+                        return Err("已取消".into());
+                    }
+                    let wav = if task.config.save_audio {
+                        Some(task.wav()?)
+                    } else {
+                        None
+                    };
+                    let store = store.lock().map_err(|_| "历史数据库忙碌")?;
+                    let id = store
+                        .save_task_history(&task)
+                        .map_err(|_| "历史保存失败，任务仍可恢复")?;
+                    task.history_id = Some(id);
+                    let has_audio = if let Some(wav) = wav {
+                        store
+                            .save_audio_file(id, &wav)
+                            .map_err(|_| "录音归档失败，恢复缓存仍保留")?;
+                        true
+                    } else {
+                        false
+                    };
+                    if cancelled.load(Ordering::Acquire) {
+                        task.phase = "已取消".into();
+                        task.save()?;
+                        return Err("已取消".into());
+                    }
+                    let _ = sender.send(Stage::Insert);
+                    let history = store.history().map_err(|_| "无法刷新历史")?;
+                    let stats = store.stats();
+                    drop(store);
+                    if task.error.is_empty() {
+                        task.phase = "已完成".into();
+                    }
+                    task.save()?;
+                    if task.error.is_empty() {
+                        task.remove()?;
+                    }
+                    Ok((task, id, has_audio, history, stats))
+                })
+                .await;
+            let _ = this.update(cx, |s, cx| {
+                if s.generation != generation || !matches!(s.phase, Phase::Working(_)) {
+                    s.refresh_recovery(cx);
+                    return;
+                }
+                s.cancelled = None;
+                s.active_task = None;
+                s.stages = None;
+                s.working_progress = 1.0;
+                match result {
+                    Err(err) => s.note(Notice::Error(err), cx),
+                    Ok((task, id, has_audio, history, stats)) => {
+                        s.history = history;
+                        s.stats = stats;
+                        if has_audio {
+                            s.audio_ids.insert(id);
                         }
+                        let text = if task.polished.is_empty() {
+                            task.corrected.clone()
+                        } else {
+                            task.polished.clone()
+                        };
+                        if is_recovery || for_studio {
+                            s.studio_raw = task.transcript;
+                            s.studio_output = text;
+                            s.note(
+                                Notice::Done(
+                                    "内容已保存到历史，可复制；恢复任务不会自动粘贴".into(),
+                                ),
+                                cx,
+                            );
+                        } else {
+                            let (inserted, restore) = paste::insert_text(&text);
+                            if let Some(restore) = restore {
+                                cx.spawn(async move |_this, cx| {
+                                    cx.background_executor()
+                                        .timer(Duration::from_millis(280))
+                                        .await;
+                                    cx.update(|_| restore.apply());
+                                })
+                                .detach();
+                            }
+                            if matches!(inserted, InsertResult::Pasted) {
+                                s.watch_paste_correction(id, text, cx);
+                            }
+                            let notice = if !task.error.is_empty() {
+                                Notice::Warn("润色失败，已使用转写原文；可在设置中重试润色".into())
+                            } else if matches!(inserted, InsertResult::Pasted) {
+                                Notice::Done("已贴入并保存".into())
+                            } else {
+                                Notice::Copied
+                            };
+                            s.note(notice, cx);
+                        }
+                        s.maybe_mine(cx);
                     }
                 }
-                self.history = store.history().unwrap_or_default();
-                self.stats = store.stats();
-            }
-        }
-        if !for_studio && pasted {
-            if let Some(row_id) = inserted_row {
-                self.watch_paste_correction(row_id, inserted_text, cx);
-            }
-        }
-        self.maybe_mine(cx);
-        self.note(notice, cx);
+                s.refresh_recovery(cx);
+            });
+        })
+        .detach();
     }
-
     pub(super) fn note(&mut self, notice: Notice, cx: &mut Context<Self>) {
         let duration = notice.duration();
         self.note_id = self.note_id.wrapping_add(1);
@@ -432,10 +452,7 @@ impl Session {
     }
 
     fn sync_voice(&mut self, cx: &mut Context<Self>) {
-        hotkey::set_cancel_armed(matches!(
-            self.phase,
-            Phase::Listening | Phase::Working(_)
-        ));
+        hotkey::set_cancel_armed(matches!(self.phase, Phase::Listening | Phase::Working(_)));
         self.hide_epoch = self.hide_epoch.wrapping_add(1);
         if matches!(self.phase, Phase::Idle) {
             let epoch = self.hide_epoch;
@@ -457,11 +474,30 @@ impl Session {
 
     pub fn watch_level(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
+            let mut permission_poll = std::time::Instant::now();
             loop {
                 let mut interval = Duration::from_millis(90);
                 let alive = this
                     .update(cx, |session, cx| {
                         let mut changed = false;
+                        if permission_poll.elapsed() >= Duration::from_secs(2) {
+                            permission_poll = std::time::Instant::now();
+                            let trusted = crate::hotkey::is_accessibility_trusted();
+                            let microphone = crate::permissions::microphone_status();
+                            if session.microphone_access != microphone {
+                                session.microphone_access = microphone;
+                                changed = true;
+                            }
+                            if session.accessibility_trusted != trusted {
+                                session.accessibility_trusted = trusted;
+                                changed = true;
+                            }
+                        }
+                        if let Some(error) = session.recording.as_ref().and_then(|r| r.error()) {
+                            session.interrupt_recording(&error, cx);
+                            return;
+                        }
+
                         if matches!(session.phase, Phase::Listening) || session.mic_testing {
                             let level = crate::capture::level();
                             let wave = crate::capture::wave();

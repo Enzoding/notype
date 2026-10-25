@@ -30,20 +30,15 @@ pub fn focused_text() -> Option<FocusedText> {
 
 unsafe fn focused_text_inner() -> Option<FocusedText> {
     let system_ptr = unsafe { AXUIElementCreateSystemWide() };
-    let system = unsafe { CFRetained::<CFType>::from_raw(NonNull::new(system_ptr.cast::<CFType>())?) };
+    let system =
+        unsafe { CFRetained::<CFType>::from_raw(NonNull::new(system_ptr.cast::<CFType>())?) };
     unsafe {
-        AXUIElementSetMessagingTimeout(
-            CFRetained::as_ptr(&system).as_ptr().cast::<c_void>(),
-            0.5,
-        );
+        AXUIElementSetMessagingTimeout(CFRetained::as_ptr(&system).as_ptr().cast::<c_void>(), 0.5);
     }
 
     let focused = unsafe { copy_attr(&system, "AXFocusedUIElement")? };
     unsafe {
-        AXUIElementSetMessagingTimeout(
-            CFRetained::as_ptr(&focused).as_ptr().cast::<c_void>(),
-            0.5,
-        );
+        AXUIElementSetMessagingTimeout(CFRetained::as_ptr(&focused).as_ptr().cast::<c_void>(), 0.5);
     }
 
     let role = unsafe { copy_string(&focused, "AXRole") }.unwrap_or_default();

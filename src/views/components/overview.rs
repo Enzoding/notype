@@ -1,8 +1,6 @@
 use gpui_kit::assets::IconName as LucideIcon;
 use gpui_kit::component::Icon;
-use gpui_kit::{
-    App, FontWeight, IntoElement, ParentElement, Styled, div, px,
-};
+use gpui_kit::{div, px, App, FontWeight, IntoElement, ParentElement, Styled};
 
 use crate::ui;
 

@@ -4,12 +4,12 @@ use gpui_kit::assets::IconName as LucideIcon;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    App, ElementId, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
-    ParentElement, StatefulInteractiveElement, Styled, div, hsla, px, rems,
+    div, hsla, px, rems, App, ElementId, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
+    ParentElement, StatefulInteractiveElement, Styled,
 };
 
 use crate::hotkey;
-use crate::session::{Notice, Phase, Session, mmss};
+use crate::session::{mmss, Notice, Phase, Session};
 use crate::store::TriggerMode;
 use crate::ui;
 use crate::views::components::primitives::button;
@@ -112,18 +112,13 @@ pub fn sidebar_status_card(
                         .flex()
                         .items_center()
                         .gap(px(6.0))
-                        .child(
-                            div()
-                                .size(px(6.5))
-                                .rounded_full()
-                                .bg(if is_rec {
-                                    ui::live(cx)
-                                } else if has_key {
-                                    ui::ok(cx)
-                                } else {
-                                    ui::warn(cx)
-                                }),
-                        )
+                        .child(div().size(px(6.5)).rounded_full().bg(if is_rec {
+                            ui::live(cx)
+                        } else if has_key {
+                            ui::ok(cx)
+                        } else {
+                            ui::warn(cx)
+                        }))
                         .child(
                             div()
                                 .text_size(rems(0.75))
@@ -151,7 +146,11 @@ pub fn sidebar_status_card(
         )
         .child(button(
             "sidebar-quick-toggle",
-            if is_rec { "完成并转写" } else { "立即开始口述" },
+            if is_rec {
+                "完成并转写"
+            } else {
+                "立即开始口述"
+            },
             is_rec,
             move |_, cx| {
                 session.update(cx, |s, cx| {

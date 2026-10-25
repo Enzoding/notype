@@ -7,8 +7,11 @@ Notype is a Rust 2021 macOS dictation application using GPUI Kit. All applicatio
 - `main.rs`: startup, windows, tray menu, and event dispatch.
 - `session/`: session state and recording lifecycle, divided into domain submodules (`lifecycle`, `settings`, `history`, `mining`, `studio`, `time`, `types`).
 - `capture.rs`, `audio.rs`, `hotkey.rs`, `paste.rs`, `ax.rs`, and `front.rs`: audio, accessibility, clipboard, and frontmost application sensing.
-- `gateway.rs`, `polish.rs`, and `mining.rs`: AI requests, writing modes, and terminology learning.
-- `store.rs` and `secrets.rs`: SQLite persistence and API key configuration.
+- `providers/`: channel profiles, endpoint validation, model catalogs, HTTP retry/cancellation, and Vercel/OpenRouter transcription and chat protocols. One active channel owns transcription, polishing, and glossary calls; endpoint URLs are fixed by channel and are not editable. `gateway.rs` is a compatibility facade.
+- `tasks/`: serializable recording jobs, raw-audio journal/checkpoints, recovery repository, and resumable transcription/polishing. Keep GPUI out of this feature.
+- `polish.rs` and `mining.rs`: writing modes and terminology learning.
+- `permissions.rs`: native macOS microphone authorization queries and prompts; cache permission results outside rendering.
+- `store.rs`: SQLite history/settings persistence and idempotent task-to-history mapping. `secrets.rs` and `keychain.rs`: verified legacy credential migration and native macOS Keychain access.
 - `views/`, `overlay.rs`, and `ui.rs`: workspace screens, modular UI controls (`views/components/`), floating voice capsule, and shared styling.
 
 Unit tests are embedded beside implementation code. UI assets come from GPUI Kit. `target/` contains ignored build output.
@@ -22,6 +25,7 @@ Run on macOS with Rust and Apple developer tools:
 - `cargo test --locked`: run the unit test suite.
 - `cargo test --locked mining::tests`: run terminology-learning tests only.
 - `cargo fmt --check`: check standard Rust formatting; use `cargo fmt` to apply it (install via `rustup component add rustfmt` if missing).
+- `NOTYPE_DATA_DIR=/absolute/scratch/path cargo run --locked`: isolated development data and a separate development Keychain service; does not import the project `.env.local`. Never point this at production data for smoke tests.
 - `cargo clippy --all-targets --locked`: inspect compiler and lint diagnostics (install via `rustup component add clippy` if missing).
 
 ## UI Rendering & GPUI Performance Guidelines
@@ -106,4 +110,14 @@ Recent commits use prefixes such as `feat(dictionary):`, `feat(ui):`, and `refac
 
 ## Security & Configuration
 
-Copy `.env.example` to `.env.local` and set `AI_GATEWAY_API_KEY`; never commit keys or expose them in logs. Configuration resolves relative to the compile-time project directory. Local history and optional recordings live under `~/Library/Application Support/Notype/` (with automatic backwards compatibility fallback for legacy `~/Library/Application Support/OpenTypeless/`). Audio and text are sent to AI Gateway for processing; avoid real user data in fixtures.
+New user-entered channel keys are stored in macOS Keychain. Legacy SQLite / `.env.local` credentials are migrated only after a verified Keychain write; unrelated environment assignments are preserved. For first-time developer setup, `.env.example` / `AI_GATEWAY_API_KEY` remains a legacy import source. Never commit keys or expose them in logs. Production and isolated development Keychain services are separate. Local history and optional recordings live under `~/Library/Application Support/Notype/` (with automatic backwards compatibility fallback for legacy `~/Library/Application Support/OpenTypeless/`). Audio and text are sent to AI Gateway for processing; avoid real user data in fixtures.
+
+## Recording Recovery
+
+Recordings stop automatically after ten minutes. Audio is journaled to `tasks/<id>/audio.raw` (interleaved little-endian f32 with format in `task.json`); the atomically written `checkpoint` contains the last synced byte count. Recovery consumes only complete frames up to that count, so a crash can lose the most recent unsynced tail. ASR uses contiguous 30-second chunks and checkpoints each successful transcript. Failed/interrupted jobs are retained for seven days and cleaned on a recovery scan; successful jobs are removed after history/audio archival. Recovery is explicit and never auto-pastes. Retrying uses current route/model configuration for unfinished stages while preserving completed chunks. Back up the entire data directory before manual repairs; do not edit or delete a running job.
+
+HTTP timeouts are ambiguous and are not automatically resent. Only 429/502/503/504 receive bounded automatic retries (two retries; short numeric Retry-After honored). Cancellation stops subsequent calls and delivery; an already running blocking request may still finish and incur upstream charges.
+
+## Setup & Preferences Presentation
+
+The workbench's first module shows exactly two setup requirements: whether the selected channel has a key and whether microphone plus Accessibility permissions are complete. Show OK when both are satisfied. Keep model IDs, endpoint addresses, connection test results, and device availability out of this first module. Preferences mount only the selected topic; model catalogs are opt-in and bounded to six entries per type. Never query permissions, detect proxies, scan files, or clone full catalogs / recording texts during a scroll render.

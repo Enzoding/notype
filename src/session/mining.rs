@@ -12,7 +12,10 @@ use crate::store::Store;
 use super::time::{now_secs, truncate_text};
 use super::Session;
 
-pub(super) fn persist_learning(store: &Arc<Mutex<Store>>, learning: &EditLearning) -> (usize, usize) {
+pub(super) fn persist_learning(
+    store: &Arc<Mutex<Store>>,
+    learning: &EditLearning,
+) -> (usize, usize) {
     let Ok(store) = store.lock() else {
         return (0, 0);
     };
@@ -110,7 +113,10 @@ impl Session {
     /// Called after each history insert and at launch. Cheap when there is
     /// nothing new; the LLM request itself always runs on a background thread.
     pub fn maybe_mine(&mut self, cx: &mut Context<Self>) {
-        if self.mining || self.key.is_empty() || self.auto_learn_mode == AutoLearnMode::Off {
+        if self.mining
+            || self.provider_key(self.connections.kind).is_empty()
+            || self.auto_learn_mode == AutoLearnMode::Off
+        {
             return;
         }
         let (last_id, last_at, new_rows) = {
@@ -136,7 +142,7 @@ impl Session {
         if self.mining {
             return;
         }
-        if self.key.is_empty() {
+        if self.provider_key(self.connections.kind).is_empty() {
             self.mining_status = "先在偏好设置里保存 API Key。".into();
             cx.notify();
             return;
@@ -186,14 +192,8 @@ impl Session {
             return;
         }
         let prompt = mining::glossary_prompt(&mining_rows);
-        let cursor = rows
-            .iter()
-            .map(|item| item.id)
-            .max()
-            .unwrap_or(cursor_hint);
-        let base_url = self.api_base_url.clone();
-        let key = self.key.clone();
-        let model = self.polish_model.clone();
+        let cursor = rows.iter().map(|item| item.id).max().unwrap_or(cursor_hint);
+        let (base_url, key, model) = self.polish_route();
         let mode = self.auto_learn_mode;
         self.mining = true;
         self.mining_status = format!("正在分析 {} 条口述…", mining_rows.len());
@@ -297,7 +297,8 @@ impl Session {
         let (learned, corrections) = persist_learning(&self.store, &learning);
         self.refresh_learning(cx);
         if learned > 0 || corrections > 0 {
-            self.mining_status = format!("{label}：学习 {learned} 个词条，{corrections} 条拼写纠正。");
+            self.mining_status =
+                format!("{label}：学习 {learned} 个词条，{corrections} 条拼写纠正。");
         }
         cx.notify();
     }
@@ -327,9 +328,7 @@ impl Session {
             else {
                 return;
             };
-            cx.background_executor()
-                .timer(Duration::from_secs(8))
-                .await;
+            cx.background_executor().timer(Duration::from_secs(8)).await;
             let Some(after) = cx
                 .background_executor()
                 .spawn(async { ax::focused_text() })
@@ -358,8 +357,7 @@ impl Session {
             let _ = this.update(cx, |session, cx| {
                 session.refresh_learning(cx);
                 if learned > 0 || corrections > 0 {
-                    session.mining_status =
-                        format!("从粘贴后的修正中学习 {learned} 个词条");
+                    session.mining_status = format!("从粘贴后的修正中学习 {learned} 个词条");
                 }
                 cx.notify();
             });

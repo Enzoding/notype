@@ -2,13 +2,13 @@ use gpui_kit::component::input::{Textarea, TextareaState};
 use gpui_kit::component::IconName;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    App, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, px, rems,
+    div, px, rems, App, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    SharedString, Styled,
 };
 
 use crate::paste;
 use crate::polish::{self, PolishMode};
-use crate::session::{Session, format_duration_ms, format_relative_time};
+use crate::session::{format_duration_ms, format_relative_time, Session};
 use crate::store::HistoryItem;
 use crate::ui;
 use crate::views::components::primitives::{button, icon_button, small_action_pill};
@@ -66,11 +66,7 @@ pub fn history_card_row(
                         .items_center()
                         .gap(px(8.0))
                         .child(ui::pill(app_name, ui::fg(cx), ui::well_bg(cx)))
-                        .child(ui::pill(
-                            mode_label,
-                            ui::accent(cx),
-                            ui::accent_soft(cx),
-                        ))
+                        .child(ui::pill(mode_label, ui::accent(cx), ui::accent_soft(cx)))
                         .when(!duration_str.is_empty(), |row| {
                             row.child(
                                 div()
@@ -114,7 +110,11 @@ pub fn history_card_row(
                             bar.child(small_action_pill(
                                 format!("toggle-raw-{id}"),
                                 IconName::FileText,
-                                if is_expanded { "收起原文" } else { "对比原文" },
+                                if is_expanded {
+                                    "收起原文"
+                                } else {
+                                    "对比原文"
+                                },
                                 move |_, cx| {
                                     v.update(cx, |view, cx| {
                                         view.toggle_raw_expand(id, cx);
@@ -178,7 +178,11 @@ pub fn history_card_row(
                             small_action_pill(
                                 format!("repolish-{id}"),
                                 IconName::RefreshCw,
-                                if is_repolishing { "润色中…" } else { "重润色" },
+                                if is_repolishing {
+                                    "润色中…"
+                                } else {
+                                    "重润色"
+                                },
                                 move |_, cx| {
                                     s.update(cx, |session, cx| {
                                         session.repolish_history_item(item_clone.clone(), cx);
@@ -257,8 +261,7 @@ pub fn history_card_row(
                                 "保存修正并学习",
                                 true,
                                 move |_, cx| {
-                                    let corrected =
-                                        correction_input.read(cx).value().to_string();
+                                    let corrected = correction_input.read(cx).value().to_string();
                                     if corrected.trim().is_empty() {
                                         return;
                                     }
@@ -307,7 +310,11 @@ pub fn history_card_row(
                                 } else {
                                     IconName::Copy
                                 },
-                                if is_raw_copied { "已复制原文" } else { "复制原文" },
+                                if is_raw_copied {
+                                    "已复制原文"
+                                } else {
+                                    "复制原文"
+                                },
                                 move |_, cx| {
                                     if paste::copy_to_clipboard(&raw_copy) {
                                         v.update(cx, |view, cx| {

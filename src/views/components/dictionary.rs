@@ -1,8 +1,8 @@
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    App, Entity, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, div, px, rems,
+    div, px, rems, App, Entity, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled,
 };
 
 use crate::mining::TermKind;
@@ -73,24 +73,10 @@ pub fn candidate_row(
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(candidate.phrase.clone()),
                         )
-                        .child(ui::pill(
-                            kind,
-                            ui::accent(cx),
-                            ui::accent_soft(cx),
-                        ))
-                        .child(
-                            div()
-                                .text_size(rems(0.65625))
-                                .text_color(dim)
-                                .child(meta),
-                        ),
+                        .child(ui::pill(kind, ui::accent(cx), ui::accent_soft(cx)))
+                        .child(div().text_size(rems(0.65625)).text_color(dim).child(meta)),
                 )
-                .child(
-                    div()
-                        .text_size(rems(0.6875))
-                        .text_color(dim)
-                        .child(quote),
-                ),
+                .child(div().text_size(rems(0.6875)).text_color(dim).child(quote)),
         )
         .child(
             div()
@@ -160,12 +146,13 @@ pub fn phrase_row(
                             .child(format!("{hits} 次")),
                     )
                 })
-                .child(
-                    div()
-                        .text_size(rems(0.65625))
-                        .text_color(dim)
-                        .child(if source == "manual" { "手动" } else { "自动" }),
-                ),
+                .child(div().text_size(rems(0.65625)).text_color(dim).child(
+                    if source == "manual" {
+                        "手动"
+                    } else {
+                        "自动"
+                    },
+                )),
         )
         .child(
             div()

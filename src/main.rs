@@ -4,21 +4,25 @@ mod capture;
 mod front;
 mod gateway;
 mod hotkey;
+mod keychain;
 mod mining;
 mod overlay;
 mod paste;
+mod permissions;
 mod polish;
+mod providers;
 mod secrets;
 mod session;
 mod store;
+mod tasks;
 mod ui;
 mod views;
 
 use std::time::Duration;
 
 use gpui_kit::{
-    ActivationPolicy, AnyWindowHandle, App, AppContext, Bounds, TitlebarOptions, WindowBounds,
-    WindowKind, WindowOptions, application, assets, init, open_window, point, px, size,
+    application, assets, init, open_window, point, px, size, ActivationPolicy, AnyWindowHandle,
+    App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowKind, WindowOptions,
 };
 use session::Session;
 use views::SettingsView;
@@ -38,6 +42,8 @@ fn main() {
             ActivationPolicy::Accessory
         });
         session.update(cx, |session, cx| session.watch_level(cx));
+        session.update(cx, |session, cx| session.refresh_recovery(cx));
+        session.update(cx, |session, cx| session.refresh_mics(cx));
         session.update(cx, |session, cx| session.maybe_mine(cx));
 
         let mut settings = open_settings(cx, session.clone());
@@ -100,23 +106,35 @@ fn open_settings(cx: &mut App, session: gpui_kit::Entity<Session>) -> AnyWindowH
     let (window, _) = open_window(settings_options(cx), cx, move |window, cx| {
         gpui_kit::component::Theme::change(window.appearance(), Some(window), cx);
         crate::ui::sync_controls(cx);
-        let initial_key = session.read(cx).key.clone();
+        let initial_key = session.read(cx).connections.key.clone();
         let key_input = cx.new(|cx| {
             let mut st = gpui_kit::component::input::InputState::new(window, cx)
                 .placeholder("请输入 API Key（例如 vck_... 或 sk-...）");
+            st.set_masked(true, window, cx);
             if !initial_key.is_empty() {
                 st.set_value(&initial_key, window, cx);
             }
             st
         });
-        let initial_base_url = session.read(cx).api_base_url.clone();
-        let base_url_input = cx.new(|cx| {
-            let mut st = gpui_kit::component::input::InputState::new(window, cx)
-                .placeholder("https://ai-gateway.vercel.sh");
-            if !initial_base_url.is_empty() {
-                st.set_value(&initial_base_url, window, cx);
-            }
-            st
+        let transcribe_model_input = cx.new(|cx| {
+            let mut state =
+                gpui_kit::component::input::InputState::new(window, cx).placeholder("转写模型 ID");
+            state.set_value(
+                session.read(cx).connections.transcribe_model.clone(),
+                window,
+                cx,
+            );
+            state
+        });
+        let polish_model_input = cx.new(|cx| {
+            let mut state =
+                gpui_kit::component::input::InputState::new(window, cx).placeholder("润色模型 ID");
+            state.set_value(
+                session.read(cx).connections.polish_model.clone(),
+                window,
+                cx,
+            );
+            state
         });
         let phrase_input = cx.new(|cx| {
             gpui_kit::component::input::InputState::new(window, cx)
@@ -150,7 +168,8 @@ fn open_settings(cx: &mut App, session: gpui_kit::Entity<Session>) -> AnyWindowH
             SettingsView::new(
                 session.clone(),
                 key_input,
-                base_url_input,
+                transcribe_model_input,
+                polish_model_input,
                 phrase_input,
                 studio_input,
                 history_search_input,
@@ -258,8 +277,8 @@ fn voice_options(cx: &App) -> WindowOptions {
 }
 
 fn install_tray() -> Option<tray_icon::TrayIcon> {
-    use tray_icon::TrayIconBuilder;
     use tray_icon::menu::{Menu, MenuItem};
+    use tray_icon::TrayIconBuilder;
     let menu = Menu::new();
     let show = MenuItem::with_id("show", "打开工作台", true, None);
     let toggle = MenuItem::with_id("toggle", "开始或停止口述", true, None);

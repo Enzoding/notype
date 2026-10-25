@@ -16,14 +16,12 @@ impl Session {
         if input_text.is_empty() || self.studio_busy {
             return;
         }
-        if self.key.is_empty() {
+        if self.provider_key(self.connections.kind).is_empty() {
             self.studio_output = "请先在设置中填写并保存 API Key。".into();
             cx.notify();
             return;
         }
-        let base_url = self.api_base_url.clone();
-        let key = self.key.clone();
-        let model = self.polish_model.clone();
+        let (base_url, key, model) = self.polish_route();
         let phrases = self
             .store
             .lock()
@@ -96,8 +94,7 @@ impl Session {
         }
         self.studio_output = corrected.to_string();
         let known: Vec<String> = self.phrases.iter().map(|p| p.phrase.clone()).collect();
-        let learning =
-            mining::learn_from_edit(&old, corrected, &old, 0, EditMode::General, &known);
+        let learning = mining::learn_from_edit(&old, corrected, &old, 0, EditMode::General, &known);
         self.persist_and_refresh(learning, "润色修正", cx);
     }
 }
