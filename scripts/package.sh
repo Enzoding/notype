@@ -57,6 +57,13 @@ cat <<EOF > "${APP_BUNDLE}/Contents/Info.plist"
     <string>${BIN_NAME}</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>zh-Hans</string>
+    </array>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>NSHighResolutionCapable</key>
@@ -64,16 +71,46 @@ cat <<EOF > "${APP_BUNDLE}/Contents/Info.plist"
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Notype 需要麦克风权限以进行高保真语音识别与转写。</string>
+    <string>Notype needs microphone access to record audio for speech-to-text dictation.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Notype 需要语音识别权限以处理您的口述录音。</string>
+    <string>Notype needs speech recognition permissions to process your voice dictation.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Notype 需要辅助功能与控制权限以将润色文字直接插入到当前应用中。</string>
+    <string>Notype needs accessibility and control permissions to paste polished text into your active application.</string>
     <key>NSSystemAdministrationUsageDescription</key>
-    <string>Notype 需要辅助功能权限以监听全局口述快捷键及自动输入文字。</string>
+    <string>Notype needs accessibility permissions to monitor the global dictation hotkey and insert text.</string>
 </dict>
 </plist>
 EOF
+
+echo "==> Generating localized InfoPlist.strings..."
+mkdir -p "${APP_BUNDLE}/Contents/Resources/en.lproj"
+mkdir -p "${APP_BUNDLE}/Contents/Resources/zh-Hans.lproj"
+mkdir -p "${APP_BUNDLE}/Contents/Resources/zh_CN.lproj"
+
+cat <<EOF > "${APP_BUNDLE}/Contents/Resources/en.lproj/InfoPlist.strings"
+"CFBundleDisplayName" = "Notype";
+"CFBundleName" = "Notype";
+"NSMicrophoneUsageDescription" = "Notype needs microphone access to record audio for speech-to-text dictation.";
+"NSSpeechRecognitionUsageDescription" = "Notype needs speech recognition permissions to process your voice dictation.";
+"NSAppleEventsUsageDescription" = "Notype needs accessibility and control permissions to paste polished text into your active application.";
+"NSSystemAdministrationUsageDescription" = "Notype needs accessibility permissions to monitor the global dictation hotkey and insert text.";
+EOF
+
+cat <<EOF > "${APP_BUNDLE}/Contents/Resources/zh-Hans.lproj/InfoPlist.strings"
+"CFBundleDisplayName" = "Notype";
+"CFBundleName" = "Notype";
+"NSMicrophoneUsageDescription" = "Notype 需要麦克风权限以进行高保真语音识别与转写。";
+"NSSpeechRecognitionUsageDescription" = "Notype 需要语音识别权限以处理您的口述录音。";
+"NSAppleEventsUsageDescription" = "Notype 需要辅助功能与控制权限以将润色文字直接插入到当前应用中。";
+"NSSystemAdministrationUsageDescription" = "Notype 需要辅助功能权限以监听全局口述快捷键及自动输入文字。";
+EOF
+
+cp "${APP_BUNDLE}/Contents/Resources/zh-Hans.lproj/InfoPlist.strings" "${APP_BUNDLE}/Contents/Resources/zh_CN.lproj/InfoPlist.strings"
+
+plutil -lint "${APP_BUNDLE}/Contents/Info.plist"
+plutil -lint "${APP_BUNDLE}/Contents/Resources/en.lproj/InfoPlist.strings"
+plutil -lint "${APP_BUNDLE}/Contents/Resources/zh-Hans.lproj/InfoPlist.strings"
+plutil -lint "${APP_BUNDLE}/Contents/Resources/zh_CN.lproj/InfoPlist.strings"
 
 echo "==> Ad-hoc code signing the .app bundle..."
 codesign --force --deep --sign - "${APP_BUNDLE}"

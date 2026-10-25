@@ -40,7 +40,7 @@ Notype runs at native 60~120Hz display refresh rates on macOS. Uphold these stri
 
 ## Coding Style & Naming Conventions
 
-Use standard rustfmt formatting with four-space indentation. Use `snake_case` for modules, functions, and variables; `PascalCase` for types; and `SCREAMING_SNAKE_CASE` for constants. Keep macOS FFI isolated in platform modules and document unsafe assumptions. Follow the existing Chinese interface copy. Run blocking network and expensive work through background execution so the UI remains responsive.
+Use standard rustfmt formatting with four-space indentation. Use `snake_case` for modules, functions, and variables; `PascalCase` for types; and `SCREAMING_SNAKE_CASE` for constants. Keep macOS FFI isolated in platform modules and document unsafe assumptions. Add new user-visible copy to both `locales/en.json` and `locales/zh-Hans.json`, keeping English in idiomatic macOS editorial style and preserving Chinese interface conventions. Run blocking network and expensive work through background execution so the UI remains responsive.
 
 ## Testing Guidelines
 

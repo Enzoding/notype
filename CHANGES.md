@@ -4,6 +4,17 @@
 
 ---
 
+## [0.3.0] - 2026-10-25
+
+### 新增功能 (Features)
+- 完成多语言国际化里程碑（I0 ~ I4 全阶段闭环）：
+  - macOS 权限提示多语言化（计划 I4）：`scripts/package.sh` 打包流程新增 `en.lproj` 与 `zh-Hans.lproj`（以及 `zh_CN.lproj`）本地化 `InfoPlist.strings`，系统级麦克风、语音识别、辅助功能权限弹窗随 macOS 系统语言本地化呈现。
+  - `Info.plist` 显式声明 `CFBundleDevelopmentRegion = en` 及 `CFBundleLocalizations = [en, zh-Hans]`。
+
+### 工程治理与文档 (Engineering & Documentation)
+- `scripts/package.sh` 打包流程加入 `plutil -lint` 自动静态语法校验，保障 `.plist` 与 `.strings` 文件规范合规。
+- 更新 `AGENTS.md` 规范与 `docs/iteration-plan-2026-10-25.md`，将中英文双语字典维护与无持久化翻译作为长期开发准则。
+
 ## [0.2.7] - 2026-10-25
 
 ### 新增功能 (Features)
