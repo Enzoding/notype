@@ -24,10 +24,10 @@ pub fn candidate_row(
     let id = candidate.id;
     let kind = TermKind::from_str(&candidate.kind).label();
     let source = match candidate.source.as_str() {
-        "edit" => "来自修正",
-        "preset" => "预设命中",
-        "llm" => "AI 提取",
-        _ => "候选",
+        "edit" => crate::i18n::t("dictionary.candidate_source_edit"),
+        "preset" => crate::i18n::t("dictionary.candidate_source_preset"),
+        "llm" => crate::i18n::t("dictionary.candidate_source_llm"),
+        _ => crate::i18n::t("dictionary.candidate_source_candidate"),
     };
     let confidence = (candidate.confidence.clamp(0.0, 1.0) * 100.0).round() as i32;
     let quote = candidate
@@ -35,11 +35,17 @@ pub fn candidate_row(
         .first()
         .map(|item| item.quote.clone())
         .filter(|text| !text.trim().is_empty())
-        .unwrap_or_else(|| "来自最近一次口述".into());
+        .unwrap_or_else(|| crate::i18n::t("dictionary.candidate_default_quote").to_string());
     let quote = ellipsize(quote.trim(), 72);
-    let meta = format!(
-        "{} · 出现 {} 次 · {}% 置信",
-        source, candidate.hits, confidence
+    let hits_str = candidate.hits.to_string();
+    let conf_str = confidence.to_string();
+    let meta = crate::i18n::t_args(
+        "dictionary.candidate_meta",
+        &[
+            ("source", source),
+            ("hits", &hits_str),
+            ("confidence", &conf_str),
+        ],
     );
     let accept_id = format!("accept-candidate-{id}");
     let ignore_id = format!("ignore-candidate-{id}");
@@ -86,7 +92,7 @@ pub fn candidate_row(
                 .child(small_action_pill(
                     accept_id,
                     IconName::Check,
-                    "接受",
+                    crate::i18n::t("dictionary.candidate_accept"),
                     move |_, cx| {
                         accept_session.update(cx, |session, cx| {
                             session.accept_candidate(id, cx);
@@ -97,7 +103,7 @@ pub fn candidate_row(
                 .child(small_action_pill(
                     ignore_id,
                     IconName::Close,
-                    "忽略",
+                    crate::i18n::t("dictionary.candidate_ignore"),
                     move |_, cx| {
                         ignore_session.update(cx, |session, cx| {
                             session.ignore_candidate(id, cx);
@@ -130,7 +136,7 @@ pub fn phrase_row(
         hover,
         dim,
     } = colors;
-    let accessible = format!("删除 {label}");
+    let accessible = crate::i18n::t_args("dictionary.delete_phrase", &[("label", &label)]);
     let group_id = SharedString::from(format!("phrase-row-{id}"));
     div()
         .id(SharedString::from(format!("phrase-{id}")))
@@ -150,18 +156,16 @@ pub fn phrase_row(
                 .items_center()
                 .gap(px(8.0))
                 .when(hits > 1, |row| {
-                    row.child(
-                        div()
-                            .text_size(rems(0.65625))
-                            .text_color(dim)
-                            .child(format!("{hits} 次")),
-                    )
+                    let hits_str = hits.to_string();
+                    row.child(div().text_size(rems(0.65625)).text_color(dim).child(
+                        crate::i18n::t_args("dictionary.hits_count", &[("n", &hits_str)]),
+                    ))
                 })
                 .child(div().text_size(rems(0.65625)).text_color(dim).child(
                     if source == "manual" {
-                        "手动"
+                        crate::i18n::t("mining.source.manual")
                     } else {
-                        "自动"
+                        crate::i18n::t("mining.auto_learn.auto")
                     },
                 )),
         )

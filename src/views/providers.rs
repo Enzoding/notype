@@ -33,34 +33,38 @@ impl SettingsView {
             Vec::new()
         };
         let mut card = ui::card(cx).child(
-            setting_row("当前渠道", "全部功能使用当前渠道。", true, cx).child(
-                choice_row().children(ProviderKind::ALL.map(|kind| {
-                    let session = session.clone();
-                    let view = view.clone();
-                    button(
-                        format!("edit-{}", kind.id()),
-                        kind.label(),
-                        editor == kind,
-                        move |window, cx| {
-                            session.update(cx, |s, cx| s.select_provider(kind, cx));
-                            let s = session.read(cx);
-                            let tm = s.connections.transcribe_model.clone();
-                            let pm = s.connections.polish_model.clone();
-                            view.update(cx, |v, cx| {
-                                v.key_editing = false;
-                                v.key_input.update(cx, |i, cx| i.set_value("", window, cx));
-                                v.transcribe_model_input
-                                    .update(cx, |i, cx| i.set_value(tm, window, cx));
-                                v.polish_model_input
-                                    .update(cx, |i, cx| i.set_value(pm, window, cx));
-                                cx.notify();
-                            });
-                        },
-                    )
-                    .h(px(32.0))
-                    .rounded(px(9999.0))
-                })),
-            ),
+            setting_row(
+                crate::i18n::t("settings.channel.active_channel"),
+                crate::i18n::t("settings.channel.active_channel_desc"),
+                true,
+                cx,
+            )
+            .child(choice_row().children(ProviderKind::ALL.map(|kind| {
+                let session = session.clone();
+                let view = view.clone();
+                button(
+                    format!("edit-{}", kind.id()),
+                    kind.label(),
+                    editor == kind,
+                    move |window, cx| {
+                        session.update(cx, |s, cx| s.select_provider(kind, cx));
+                        let s = session.read(cx);
+                        let tm = s.connections.transcribe_model.clone();
+                        let pm = s.connections.polish_model.clone();
+                        view.update(cx, |v, cx| {
+                            v.key_editing = false;
+                            v.key_input.update(cx, |i, cx| i.set_value("", window, cx));
+                            v.transcribe_model_input
+                                .update(cx, |i, cx| i.set_value(tm, window, cx));
+                            v.polish_model_input
+                                .update(cx, |i, cx| i.set_value(pm, window, cx));
+                            cx.notify();
+                        });
+                    },
+                )
+                .h(px(32.0))
+                .rounded(px(9999.0))
+            }))),
         );
         card = card
             .child(key_row(
@@ -79,37 +83,29 @@ impl SettingsView {
                     .text_color(ui::fg2(cx))
                     .child(key_status),
             );
-        for (is_trans, current, models, input, label) in [
+        for (is_trans, current, models, input, label, desc) in [
             (
                 true,
                 tm,
                 trans_models,
                 self.transcribe_model_input.clone(),
-                "转写模型",
+                crate::i18n::t("settings.channel.transcribe_model"),
+                crate::i18n::t("settings.channel.transcribe_model_desc"),
             ),
             (
                 false,
                 pm,
                 chat_models,
                 self.polish_model_input.clone(),
-                "润色模型",
+                crate::i18n::t("settings.channel.polish_model"),
+                crate::i18n::t("settings.channel.polish_model_desc"),
             ),
         ] {
             let save_input = input.clone();
             let save_session = session.clone();
             card =
                 card.child(
-                    setting_row(
-                        label,
-                        if is_trans && editor == ProviderKind::OpenRouter {
-                            "此模型用于当前渠道的语音识别。"
-                        } else {
-                            "填写模型 ID，或展开目录选择。"
-                        },
-                        true,
-                        cx,
-                    )
-                    .child(
+                    setting_row(label, desc, true, cx).child(
                         div()
                             .flex_1()
                             .flex()
@@ -118,7 +114,7 @@ impl SettingsView {
                             .child(div().flex().gap(px(8.0)).child(Input::new(&input)).child(
                                 button(
                                     format!("save-model-{is_trans}"),
-                                    "保存模型",
+                                    crate::i18n::t("settings.channel.save_model"),
                                     false,
                                     move |_, cx| {
                                         let value = save_input.read(cx).value().to_string();
@@ -164,21 +160,24 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(px(8.0))
-            .child(ui::section_label("自带密钥 · 渠道与模型", None))
+            .child(ui::section_label(
+                crate::i18n::t("settings.channel.section_title"),
+                None,
+            ))
             .child(
                 card.child(
                     setting_row(
-                        "模型目录",
-                        "按需展开，每类显示最多 6 项；更多模型可填写 ID。",
+                        crate::i18n::t("settings.channel.catalog"),
+                        crate::i18n::t("settings.channel.catalog_desc"),
                         true,
                         cx,
                     )
                     .child(button(
                         "toggle-model-catalog",
                         if self.models_expanded {
-                            "收起目录"
+                            crate::i18n::t("settings.channel.collapse_catalog")
                         } else {
-                            "展开目录"
+                            crate::i18n::t("settings.channel.expand_catalog")
                         },
                         false,
                         move |_, cx| {
@@ -190,7 +189,7 @@ impl SettingsView {
                     ))
                     .child(button(
                         "refresh-models",
-                        "更新目录",
+                        crate::i18n::t("settings.channel.refresh_catalog"),
                         false,
                         move |_, cx| {
                             refresh.update(cx, |s, cx| s.refresh_models(cx));
@@ -212,22 +211,25 @@ impl SettingsView {
                         .child(
                             transcription_status
                                 .map(|(_, message)| message)
-                                .unwrap_or_else(|| "转写模型尚未测试".into()),
+                                .unwrap_or_else(|| {
+                                    crate::i18n::t("settings.channel.transcription_not_tested")
+                                        .to_string()
+                                }),
                         ),
                 )
                 .child(
                     setting_row(
-                        "转写测试",
-                        "发送合成测试语音，可能产生少量渠道费用。",
+                        crate::i18n::t("settings.channel.test_transcription"),
+                        crate::i18n::t("settings.channel.test_transcription_desc"),
                         false,
                         cx,
                     )
                     .child(button(
                         "test-transcription",
                         if testing {
-                            "正在测试…"
+                            crate::i18n::t("settings.channel.testing")
                         } else {
-                            "测试转写"
+                            crate::i18n::t("settings.channel.action_test_transcription")
                         },
                         false,
                         move |_, cx| {
@@ -275,7 +277,7 @@ impl SettingsView {
                             .gap(px(8.0))
                             .child(button(
                                 format!("retry-{}", task.id),
-                                "按当前配置重试",
+                                crate::i18n::t("recovery.action_retry"),
                                 false,
                                 move |_, cx| {
                                     retry.update(cx, |s, cx| s.retry_task(&retry_id, cx));
@@ -283,7 +285,7 @@ impl SettingsView {
                             ))
                             .child(button(
                                 format!("copy-{}", task.id),
-                                "复制已保存内容",
+                                crate::i18n::t("recovery.action_copy"),
                                 false,
                                 move |_, cx| {
                                     if let Some(text) = copy_session
@@ -302,7 +304,7 @@ impl SettingsView {
                             ))
                             .child(button(
                                 format!("delete-task-{}", task.id),
-                                "删除草稿",
+                                crate::i18n::t("recovery.action_delete"),
                                 false,
                                 move |_, cx| {
                                     remove.update(cx, |s, cx| s.delete_task(&remove_id, cx));
@@ -314,14 +316,14 @@ impl SettingsView {
         let mut content = ui::card(cx)
             .child(
                 setting_row(
-                    "录音与恢复",
-                    "最长录音 10 分钟。中断草稿保留 7 天；重试使用当前渠道配置并保留已完成片段，结果不自动粘贴。",
+                    crate::i18n::t("recovery.title"),
+                    crate::i18n::t("recovery.subtitle"),
                     true,
                     cx,
                 )
                 .child(button(
                     "refresh-recovery",
-                    "刷新恢复任务",
+                    crate::i18n::t("recovery.action_refresh"),
                     false,
                     move |_, cx| {
                         refresh.update(cx, |s, cx| s.refresh_recovery(cx));
@@ -333,7 +335,7 @@ impl SettingsView {
         if count > self.recovery_limit {
             content = content.child(button(
                 "more-recovery",
-                "显示更多",
+                crate::i18n::t("recovery.action_show_more"),
                 false,
                 move |_, cx| {
                     view.update(cx, |v, cx| {
@@ -347,7 +349,10 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(px(8.0))
-            .child(ui::section_label("未完成的口述", None))
+            .child(ui::section_label(
+                crate::i18n::t("recovery.section_title"),
+                None,
+            ))
             .child(content)
     }
 }

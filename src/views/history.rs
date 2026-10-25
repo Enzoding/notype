@@ -178,7 +178,7 @@ impl SettingsView {
                                     .gap(px(8.0))
                                     .child(button(
                                         "confirm-clear-btn",
-                                        "确认清空全部",
+                                        crate::i18n::t("history.confirm_clear_all"),
                                         true,
                                         move |_, cx| {
                                             s.update(cx, |session, cx| session.clear_history(cx));
@@ -191,7 +191,7 @@ impl SettingsView {
                                     ))
                                     .child(button(
                                         "cancel-clear-btn",
-                                        "取消",
+                                        crate::i18n::t("history.cancel"),
                                         false,
                                         move |_, cx| {
                                             v_cancel.update(cx, |view, cx| {
@@ -204,7 +204,7 @@ impl SettingsView {
                         } else {
                             row.child(button(
                                 "ask-clear-btn",
-                                "清空记录",
+                                crate::i18n::t("history.clear_all"),
                                 false,
                                 move |_, cx| {
                                     v.update(cx, |view, cx| {
@@ -220,20 +220,17 @@ impl SettingsView {
             .child(
                 ui::card(cx)
                     .when(displayed_items.is_empty(), |card| {
-                        card.child(empty_state(
-                            IconName::Search,
-                            if all_history_empty {
-                                "还没有任何口述记录"
-                            } else {
-                                "没有匹配的口述记录"
-                            },
-                            if all_history_empty {
-                                "使用快捷键在任意应用中口述，所有转写原文、润色文本与录音都会保存在本机。"
-                            } else {
-                                "尝试修改搜索关键词。"
-                            },
-                            cx,
-                        ))
+                        let title = if all_history_empty {
+                            crate::i18n::t("history.empty_title")
+                        } else {
+                            crate::i18n::t("history.empty_search_title")
+                        };
+                        let subtitle = if all_history_empty {
+                            crate::i18n::t("history.empty_subtitle")
+                        } else {
+                            crate::i18n::t("history.empty_search_subtitle")
+                        };
+                        card.child(empty_state(IconName::Search, title, subtitle, cx))
                     })
                     .children({
                         let count = displayed_items.len();
@@ -242,27 +239,30 @@ impl SettingsView {
                         let exp_ids = expanded_ids.clone();
                         let a_ids = audio_ids.clone();
                         let app = &**cx;
-                        displayed_items.into_iter().enumerate().map(move |(idx, item)| {
-                            let has_audio = a_ids.contains(&item.id);
-                            let is_playing = playing_id == Some(item.id);
-                            let is_expanded = exp_ids.contains(&item.id);
-                            let is_repolishing = repolishing_id == Some(item.id);
-                            let is_editing = editing_history_id == Some(item.id);
-                            history_card_row(
-                                item,
-                                idx + 1 == count,
-                                has_audio,
-                                is_playing,
-                                is_expanded,
-                                is_repolishing,
-                                is_editing,
-                                copied_token.clone(),
-                                correction_input.clone(),
-                                s.clone(),
-                                v.clone(),
-                                app,
-                            )
-                        })
+                        displayed_items
+                            .into_iter()
+                            .enumerate()
+                            .map(move |(idx, item)| {
+                                let has_audio = a_ids.contains(&item.id);
+                                let is_playing = playing_id == Some(item.id);
+                                let is_expanded = exp_ids.contains(&item.id);
+                                let is_repolishing = repolishing_id == Some(item.id);
+                                let is_editing = editing_history_id == Some(item.id);
+                                history_card_row(
+                                    item,
+                                    idx + 1 == count,
+                                    has_audio,
+                                    is_playing,
+                                    is_expanded,
+                                    is_repolishing,
+                                    is_editing,
+                                    copied_token.clone(),
+                                    correction_input.clone(),
+                                    s.clone(),
+                                    v.clone(),
+                                    app,
+                                )
+                            })
                     })
                     // Bottom Pagination Bar
                     .when(total_count > 0, |card| {
@@ -277,14 +277,16 @@ impl SettingsView {
                                 .px(px(16.0))
                                 .py(px(12.0))
                                 .bg(ui::well_bg(cx))
-                                .child(
-                                    div()
-                                        .text_size(rems(0.75))
-                                        .text_color(ui::fg3(cx))
-                                        .child(format!(
-                                            "共 {total_count} 条记录 · 第 {current_page} / {total_pages} 页",
-                                        )),
-                                )
+                                .child(div().text_size(rems(0.75)).text_color(ui::fg3(cx)).child(
+                                    crate::i18n::t_args(
+                                        "history.page_info",
+                                        &[
+                                            ("current", &current_page.to_string()),
+                                            ("total", &total_pages.to_string()),
+                                            ("count", &total_count.to_string()),
+                                        ],
+                                    ),
+                                ))
                                 .when(total_pages > 1, |row| {
                                     let page_items = compute_page_items(current_page, total_pages);
                                     let v_page = view.clone();
@@ -295,62 +297,64 @@ impl SettingsView {
                                             .gap(px(6.0))
                                             .child(page_btn(
                                                 "prev-page",
-                                                "上一页",
+                                                crate::i18n::t("history.page_prev"),
                                                 false,
                                                 current_page <= 1,
                                                 move |_, cx| {
                                                     v_prev.update(cx, |view, cx| {
-                                                        view.history_page = view
-                                                            .history_page
-                                                            .saturating_sub(1);
+                                                        view.history_page =
+                                                            view.history_page.saturating_sub(1);
                                                         cx.notify();
                                                     });
                                                 },
                                                 app,
                                             ))
                                             .children(page_items.into_iter().enumerate().map(
-                                                move |(idx, item)| match item {
-                                                    PageItem::Number(p) => {
-                                                        let vp = v_page.clone();
-                                                        let is_active = p == current_page;
-                                                        page_btn(
-                                                            format!("page-{p}"),
-                                                            format!("{p}"),
-                                                            is_active,
-                                                            false,
-                                                            move |_, cx| {
-                                                                vp.update(cx, |view, cx| {
-                                                                    view.history_page = p;
-                                                                    cx.notify();
-                                                                });
-                                                            },
-                                                            app,
-                                                        )
-                                                        .into_any_element()
+                                                move |(idx, item)| {
+                                                    match item {
+                                                        PageItem::Number(p) => {
+                                                            let vp = v_page.clone();
+                                                            let is_active = p == current_page;
+                                                            page_btn(
+                                                                format!("page-{p}"),
+                                                                format!("{p}"),
+                                                                is_active,
+                                                                false,
+                                                                move |_, cx| {
+                                                                    vp.update(cx, |view, cx| {
+                                                                        view.history_page = p;
+                                                                        cx.notify();
+                                                                    });
+                                                                },
+                                                                app,
+                                                            )
+                                                            .into_any_element()
+                                                        }
+                                                        PageItem::Ellipsis => div()
+                                                            .id(SharedString::from(format!(
+                                                                "page-ell-{idx}"
+                                                            )))
+                                                            .flex()
+                                                            .items_center()
+                                                            .justify_center()
+                                                            .h(px(30.0))
+                                                            .min_w(px(24.0))
+                                                            .text_size(rems(0.75))
+                                                            .text_color(ui::fg3(app))
+                                                            .child("…")
+                                                            .into_any_element(),
                                                     }
-                                                    PageItem::Ellipsis => div()
-                                                        .id(SharedString::from(format!("page-ell-{idx}")))
-                                                        .flex()
-                                                        .items_center()
-                                                        .justify_center()
-                                                        .h(px(30.0))
-                                                        .min_w(px(24.0))
-                                                        .text_size(rems(0.75))
-                                                        .text_color(ui::fg3(app))
-                                                        .child("…")
-                                                        .into_any_element(),
                                                 },
                                             ))
                                             .child(page_btn(
                                                 "next-page",
-                                                "下一页",
+                                                crate::i18n::t("history.page_next"),
                                                 false,
                                                 current_page >= total_pages,
                                                 move |_, cx| {
                                                     v_next.update(cx, |view, cx| {
-                                                        view.history_page = view
-                                                            .history_page
-                                                            .saturating_add(1);
+                                                        view.history_page =
+                                                            view.history_page.saturating_add(1);
                                                         cx.notify();
                                                     });
                                                 },

@@ -50,15 +50,18 @@ fn main() {
         let mut settings = open_settings(cx, session.clone());
         open_voice_bar(cx, session.clone());
         overlay::prepare_voice_window();
-        if let Some(tray) = install_tray() {
+        let tray_handles = if let Some((tray, handles)) = install_tray() {
             std::mem::forget(tray);
+            Some(handles)
         } else {
             eprintln!("状态栏图标没有创建成功");
-        }
+            None
+        };
 
         let events = session.clone();
         cx.spawn(async move |cx| {
             let hotkeys = hotkey::listen(initial_code, initial_mode);
+            let mut last_language_epoch = 0u64;
             loop {
                 cx.background_executor()
                     .timer(Duration::from_millis(25))
@@ -71,6 +74,18 @@ fn main() {
                 while let Ok(event) = tray_icon::menu::MenuEvent::receiver().try_recv() {
                     menu_ids.push(event.id.0);
                 }
+                // Check for language change and refresh tray menu labels
+                let epoch = events.read_with(cx, |s, _| s.language_epoch);
+                if epoch != last_language_epoch {
+                    last_language_epoch = epoch;
+                    if let Some(handles) = &tray_handles {
+                        handles.show.set_text(i18n::t("tray.show"));
+                        handles.toggle.set_text(i18n::t("tray.toggle"));
+                        handles.dock.set_text(i18n::t("tray.dock"));
+                        handles.quit.set_text(i18n::t("tray.quit"));
+                    }
+                }
+
                 if hk_events.is_empty() && menu_ids.is_empty() {
                     continue;
                 }
@@ -277,7 +292,14 @@ fn voice_options(cx: &App) -> WindowOptions {
     }
 }
 
-fn install_tray() -> Option<tray_icon::TrayIcon> {
+pub struct TrayMenuHandles {
+    show: tray_icon::menu::MenuItem,
+    toggle: tray_icon::menu::MenuItem,
+    dock: tray_icon::menu::MenuItem,
+    quit: tray_icon::menu::MenuItem,
+}
+
+fn install_tray() -> Option<(tray_icon::TrayIcon, TrayMenuHandles)> {
     use tray_icon::menu::{Menu, MenuItem};
     use tray_icon::TrayIconBuilder;
     let menu = Menu::new();
@@ -289,13 +311,20 @@ fn install_tray() -> Option<tray_icon::TrayIcon> {
     menu.append(&toggle).ok()?;
     menu.append(&dock).ok()?;
     menu.append(&quit).ok()?;
-    TrayIconBuilder::new()
+    let handles = TrayMenuHandles {
+        show,
+        toggle,
+        dock,
+        quit,
+    };
+    let tray = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_icon(status_icon()?)
         .with_icon_as_template(true)
         .with_tooltip("Notype")
         .build()
-        .ok()
+        .ok()?;
+    Some((tray, handles))
 }
 
 fn status_icon() -> Option<tray_icon::Icon> {

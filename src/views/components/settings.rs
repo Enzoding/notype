@@ -111,7 +111,7 @@ pub fn key_row(
                         .text_size(px(13.0))
                         .line_height(rems(1.45))
                         .text_color(ui::fg2(cx))
-                        .child("访问密钥，安全保存在本机。"),
+                        .child(crate::i18n::t("settings.key.row_desc_editing")),
                 ),
         )
         .child(
@@ -127,7 +127,7 @@ pub fn key_row(
                 .gap(px(8.0))
                 .child(button(
                     "save-key",
-                    "保存 Key",
+                    crate::i18n::t("settings.key.save"),
                     true,
                     move |_window, cx| {
                         let value = save_input.read(cx).value();
@@ -142,12 +142,17 @@ pub fn key_row(
                     },
                 ))
                 .when(has_key, |btns| {
-                    btns.child(button("cancel-key", "取消", false, move |_, cx| {
-                        cancel_view.update(cx, |view, cx| {
-                            view.key_editing = false;
-                            cx.notify();
-                        });
-                    }))
+                    btns.child(button(
+                        "cancel-key",
+                        crate::i18n::t("settings.key.cancel"),
+                        false,
+                        move |_, cx| {
+                            cancel_view.update(cx, |view, cx| {
+                                view.key_editing = false;
+                                cx.notify();
+                            });
+                        },
+                    ))
                 }),
         )
     } else {
@@ -177,7 +182,7 @@ pub fn key_row(
                         .text_size(px(13.0))
                         .line_height(rems(1.45))
                         .text_color(ui::fg2(cx))
-                        .child("已安全保存在本地。"),
+                        .child(crate::i18n::t("settings.key.row_desc_saved")),
                 ),
         )
         .child(
@@ -200,7 +205,11 @@ pub fn key_row(
                         .text_color(ui::fg(cx))
                         .child(masked),
                 )
-                .child(ui::pill("已就绪", ui::ok(cx), ui::ok_soft(cx))),
+                .child(ui::pill(
+                    crate::i18n::t("settings.key.ready"),
+                    ui::ok(cx),
+                    ui::ok_soft(cx),
+                )),
         )
         .child(
             div()
@@ -209,7 +218,7 @@ pub fn key_row(
                 .gap(px(8.0))
                 .child(button(
                     "edit-key",
-                    "修改 Key",
+                    crate::i18n::t("settings.key.edit"),
                     false,
                     move |window, cx| {
                         let k = current_key.clone();
@@ -222,13 +231,18 @@ pub fn key_row(
                         });
                     },
                 ))
-                .child(button("clear-key", "清除", false, move |_, cx| {
-                    clear_session.update(cx, |session, cx| session.clear_key(cx));
-                    clear_view.update(cx, |view, cx| {
-                        view.key_editing = true;
-                        cx.notify();
-                    });
-                })),
+                .child(button(
+                    "clear-key",
+                    crate::i18n::t("settings.key.clear"),
+                    false,
+                    move |_, cx| {
+                        clear_session.update(cx, |session, cx| session.clear_key(cx));
+                        clear_view.update(cx, |view, cx| {
+                            view.key_editing = true;
+                            cx.notify();
+                        });
+                    },
+                )),
         )
     }
 }
@@ -260,14 +274,14 @@ pub fn connection_status_row(
                         .text_size(px(14.0))
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(ui::fg(cx))
-                        .child("网络与连接测试"),
+                        .child(crate::i18n::t("settings.gateway.network_test")),
                 )
                 .child(
                     div()
                         .text_size(px(13.0))
                         .line_height(rems(1.45))
                         .text_color(ui::fg2(cx))
-                        .child("仅验证当前渠道的润色模型，可能产生少量费用。"),
+                        .child(crate::i18n::t("settings.gateway.network_test_desc")),
                 ),
         )
         .child(
@@ -293,9 +307,9 @@ pub fn connection_status_row(
         .child(button(
             "test-connection-btn",
             if testing {
-                "正在测试…"
+                crate::i18n::t("settings.channel.testing")
             } else {
-                "测试润色"
+                crate::i18n::t("settings.gateway.test_polish")
             },
             testing,
             move |_, cx| {

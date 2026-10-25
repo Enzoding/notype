@@ -34,11 +34,11 @@ impl SettingsSection {
     ];
     pub fn label(self) -> &'static str {
         match self {
-            Self::Channel => "AI 渠道",
-            Self::Recording => "录音与恢复",
-            Self::Input => "快捷键与麦克风",
-            Self::Writing => "润色与学习",
-            Self::System => "本机",
+            Self::Channel => crate::i18n::t("settings.section.channel"),
+            Self::Recording => crate::i18n::t("settings.section.recording"),
+            Self::Input => crate::i18n::t("settings.section.input"),
+            Self::Writing => crate::i18n::t("settings.section.writing"),
+            Self::System => crate::i18n::t("settings.section.system"),
         }
     }
 }
@@ -91,6 +91,7 @@ impl SettingsView {
             show_dock,
             auto_learn_mode,
             learn_from_edits,
+            ui_language,
         ) = {
             let s = self.session.read(cx);
             (
@@ -108,6 +109,7 @@ impl SettingsView {
                 s.show_dock,
                 s.auto_learn_mode,
                 s.learn_from_edits,
+                s.ui_language,
             )
         };
 
@@ -127,18 +129,32 @@ impl SettingsView {
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(ui::section_label("权限与快捷键", None).text_color(ui::fg2(cx)))
+                    .child(ui::section_label(crate::i18n::t("settings.input.section_title"), None).text_color(ui::fg2(cx)))
                     .child(
                         ui::card(cx)
-                            .child(setting_row("麦克风权限","用于录制你的声音。",true,cx).child(
+                            .child(setting_row(
+                                crate::i18n::t("settings.input.mic_permission"),
+                                crate::i18n::t("settings.input.mic_desc"),
+                                true,
+                                cx,
+                            ).child(
                                 div().flex().items_center().gap(px(12.0))
                                     .child(ui::pill(microphone_access.label(),if microphone_access.granted(){ui::ok(cx)}else{ui::warn(cx)},if microphone_access.granted(){ui::ok_soft(cx)}else{ui::warn_soft(cx)}))
-                                    .child(button("microphone-permission",if microphone_access.granted(){"管理麦克风权限"}else{"授权麦克风"},false,|_,_|{crate::permissions::request_microphone();}))
+                                    .child(button(
+                                        "microphone-permission",
+                                        if microphone_access.granted() {
+                                            crate::i18n::t("settings.input.manage_mic")
+                                        } else {
+                                            crate::i18n::t("settings.input.grant_mic")
+                                        },
+                                        false,
+                                        |_,_|{crate::permissions::request_microphone();}
+                                    ))
                             ))
                             .child(
                                 setting_row(
-                                    "辅助功能",
-                                    "识别快捷键，并把文字贴进当前窗口。",
+                                    crate::i18n::t("settings.input.accessibility"),
+                                    crate::i18n::t("settings.input.accessibility_desc"),
                                     false,
                                     cx,
                                 )
@@ -149,9 +165,9 @@ impl SettingsView {
                                         .gap(px(12.0))
                                         .child(ui::pill(
                                             if ax_trusted {
-                                                "已授权"
+                                                crate::i18n::t("permission.authorized")
                                             } else {
-                                                "未授权"
+                                                crate::i18n::t("permission.denied")
                                             },
                                             if ax_trusted {
                                                 ui::ok(cx)
@@ -167,9 +183,9 @@ impl SettingsView {
                                         .child(button(
                                             "open-ax-settings",
                                             if ax_trusted {
-                                                "打开辅助功能"
+                                                crate::i18n::t("settings.input.open_accessibility")
                                             } else {
-                                                "授予辅助功能权限"
+                                                crate::i18n::t("settings.input.grant_accessibility")
                                             },
                                             false,
                                             |_, _| {
@@ -184,8 +200,8 @@ impl SettingsView {
                             // Trigger Key Row
                             .child(
                                 setting_row(
-                                    "口述快捷键",
-                                    "在任何应用里按下，开始口述。",
+                                    crate::i18n::t("settings.input.hotkey"),
+                                    crate::i18n::t("settings.input.hotkey_desc"),
                                     true,
                                     cx,
                                 )
@@ -212,8 +228,8 @@ impl SettingsView {
                             // Trigger Mode Row
                             .child(
                                 setting_row(
-                                    "开始方式",
-                                    "再按一次结束，或松开后转写。",
+                                    crate::i18n::t("settings.input.trigger_mode"),
+                                    crate::i18n::t("settings.input.trigger_mode_desc"),
                                     true,
                                     cx,
                                 )
@@ -231,7 +247,7 @@ impl SettingsView {
                                                         active,
                                                         move |_, cx| {
                                                             s.update(cx, |session, cx| {
-                                                                session.set_trigger_mode(m, cx);
+                                                                 session.set_trigger_mode(m, cx);
                                                             });
                                                         },
                                                         cx,
@@ -239,8 +255,7 @@ impl SettingsView {
                                                 }),
                                         ),
                                 ),
-                            )
-,
+                            ),
                     ),
             ))
             // 2. Microphone & Audio Section
@@ -249,14 +264,14 @@ impl SettingsView {
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(ui::section_label("麦克风", None).text_color(ui::fg2(cx)))
+                    .child(ui::section_label(crate::i18n::t("settings.audio.section_title"), None).text_color(ui::fg2(cx)))
                     .child(
                         ui::card(cx)
                             // Microphone device selector
                             .child(
                                 setting_row(
-                                    "麦克风",
-                                    "选择口述时用的输入设备。",
+                                    crate::i18n::t("settings.audio.device"),
+                                    crate::i18n::t("settings.audio.device_desc"),
                                     true,
                                     cx,
                                 )
@@ -266,7 +281,7 @@ impl SettingsView {
                                             let s = session_handle.clone();
                                             mode_chip(
                                                 "mic-default",
-                                                "系统默认",
+                                                crate::i18n::t("settings.audio.system_default"),
                                                 mic_device.is_empty(),
                                                 move |_, cx| {
                                                     s.update(cx, |session, cx| {
@@ -299,7 +314,7 @@ impl SettingsView {
                                             icon_button(
                                                 "refresh-mics",
                                                 IconName::RefreshCw,
-                                                "刷新麦克风列表",
+                                                crate::i18n::t("settings.audio.refresh_list"),
                                                 move |_, cx| {
                                                     s.update(cx, |session, cx| {
                                                         session.refresh_mics(cx);
@@ -313,8 +328,8 @@ impl SettingsView {
                             // Live Microphone Test Row
                             .child(
                                 setting_row(
-                                    "试音",
-                                    "对着麦克风说话，确认波形有反应。",
+                                    crate::i18n::t("settings.audio.test"),
+                                    crate::i18n::t("settings.audio.test_desc"),
                                     true,
                                     cx,
                                 )
@@ -328,7 +343,11 @@ impl SettingsView {
                                             let s = session_handle.clone();
                                             button(
                                                 "toggle-mic-test",
-                                                if mic_testing { "停止测试" } else { "测试麦克风" },
+                                                if mic_testing {
+                                                    crate::i18n::t("settings.audio.stop_test")
+                                                } else {
+                                                    crate::i18n::t("settings.audio.start_test")
+                                                },
                                                 mic_testing,
                                                 move |_, cx| {
                                                     s.update(cx, |session, cx| {
@@ -342,16 +361,17 @@ impl SettingsView {
                             // Sound cues switch
                             .child(
                                 setting_row(
-                                    "播放提示音",
-                                    "开始、结束和贴入完成时播放一声提示。",
+                                    crate::i18n::t("settings.audio.sound_feedback"),
+                                    crate::i18n::t("settings.audio.sound_feedback_desc"),
                                     true,
                                     cx,
                                 )
                                 .child({
                                     let s = session_handle.clone();
+                                    let label = crate::i18n::t("settings.audio.sound_feedback");
                                     Switch::new("switch-sound-cue")
                                         .checked(sound_feedback)
-                                        .accessibility_label("播放提示音")
+                                        .accessibility_label(label)
                                         .on_change(move |checked, _, cx| {
                                             let val = *checked;
                                             s.update(cx, |session, cx| {
@@ -363,16 +383,17 @@ impl SettingsView {
                             // Save audio files switch
                             .child(
                                 setting_row(
-                                    "保存录音",
-                                    "保存每次口述，之后可在口述历史里回放。",
+                                    crate::i18n::t("settings.audio.save_audio"),
+                                    crate::i18n::t("settings.audio.save_audio_desc"),
                                     false,
                                     cx,
                                 )
                                 .child({
                                     let s = session_handle.clone();
+                                    let label = crate::i18n::t("settings.audio.save_audio");
                                     Switch::new("switch-save-audio")
                                         .checked(save_audio)
-                                        .accessibility_label("保存录音")
+                                        .accessibility_label(label)
                                         .on_change(move |checked, _, cx| {
                                             let val = *checked;
                                             s.update(cx, |session, cx| {
@@ -389,14 +410,14 @@ impl SettingsView {
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(ui::section_label("润色", None).text_color(ui::fg2(cx)))
+                    .child(ui::section_label(crate::i18n::t("settings.writing.section_title"), None).text_color(ui::fg2(cx)))
                     .child(
                         ui::card(cx)
                             // Strategy selector
                             .child(
                                 setting_row(
-                                    "润色方式",
-                                    "自动会按当前应用选择，也可以固定成一种。",
+                                    crate::i18n::t("settings.writing.mode"),
+                                    crate::i18n::t("settings.writing.mode_desc"),
                                     true,
                                     cx,
                                 )
@@ -404,12 +425,12 @@ impl SettingsView {
                                     choice_row()
                                         .children(
                                             [
-                                                ("auto", "自动"),
-                                                ("prose", "正文"),
-                                                ("literal", "代码"),
-                                                ("email", "邮件"),
-                                                ("chat", "聊天"),
-                                                ("raw", "只转写"),
+                                                ("auto", crate::i18n::t("polish.mode.auto")),
+                                                ("prose", crate::i18n::t("polish.mode.prose")),
+                                                ("literal", crate::i18n::t("polish.mode.literal")),
+                                                ("email", crate::i18n::t("polish.mode.email")),
+                                                ("chat", crate::i18n::t("polish.mode.chat")),
+                                                ("raw", crate::i18n::t("polish.mode.raw")),
                                             ]
                                             .into_iter()
                                             .map(|(code, label)| {
@@ -433,16 +454,17 @@ impl SettingsView {
                             // CJK spacing switch
                             .child(
                                 setting_row(
-                                    "中英文之间加空格",
-                                    "打开后，中文和英文、数字之间会空一格，例如「使用 Rust 开发」。",
+                                    crate::i18n::t("settings.writing.space_cjk"),
+                                    crate::i18n::t("settings.writing.space_cjk_desc"),
                                     true,
                                     cx,
                                 )
                                 .child({
                                     let s = session_handle.clone();
+                                    let label = crate::i18n::t("settings.writing.space_cjk");
                                     Switch::new("switch-space-cjk")
                                         .checked(space_cjk)
-                                        .accessibility_label("中英文之间加空格")
+                                        .accessibility_label(label)
                                         .on_change(move |checked, _, cx| {
                                             let val = *checked;
                                             s.update(cx, |session, cx| {
@@ -469,7 +491,7 @@ impl SettingsView {
                                                 div()
                                                     .text_size(px(14.0))
                                                     .font_weight(FontWeight::MEDIUM)
-                                                    .child("补充要求"),
+                                                    .child(crate::i18n::t("settings.writing.custom_prompt")),
                                             )
                                             .child(
                                                 div()
@@ -478,9 +500,13 @@ impl SettingsView {
                                                     .text_size(px(13.0))
                                                     .text_color(ui::fg2(cx))
                                                     .child(if custom_prompt.is_empty() {
-                                                        "留空则使用默认润色。".to_string()
+                                                        crate::i18n::t("settings.writing.custom_prompt_empty").to_string()
                                                     } else {
-                                                        format!("正在使用：{}", ellipsize(&custom_prompt, 26))
+                                                        let prompt_preview = ellipsize(&custom_prompt, 26);
+                                                        crate::i18n::t_args(
+                                                            "settings.writing.custom_prompt_active",
+                                                            &[("prompt", &prompt_preview)],
+                                                        )
                                                     }),
                                             ),
                                     )
@@ -500,7 +526,7 @@ impl SettingsView {
                                                 let inp = custom_prompt_input.clone();
                                                 button(
                                                     "save-custom-prompt",
-                                                    "保存要求",
+                                                    crate::i18n::t("settings.writing.save_prompt"),
                                                     false,
                                                     move |_, cx| {
                                                         let val = inp.read(cx).value().to_string();
@@ -521,14 +547,17 @@ impl SettingsView {
                                                 div()
                                                     .text_size(px(13.0))
                                                     .text_color(ui::fg2(cx))
-                                                    .child("示例"),
+                                                    .child(crate::i18n::t("settings.writing.examples")),
                                             )
-                                            .children(
+                                            .children({
+                                                let ex_bullets = crate::i18n::t("settings.writing.example_bullets_text");
+                                                let ex_concise = crate::i18n::t("settings.writing.example_concise_text");
+                                                let ex_formal = crate::i18n::t("settings.writing.example_formal_text");
                                                 [
-                                                    ("默认", ""),
-                                                    ("精炼", "尽量精炼简短，删去客套话，直奔主题。"),
-                                                    ("书面", "使用克制、专业的书面表达，适合技术文档与正式汇报。"),
-                                                    ("分点", "遇到多项内容时，优先使用清晰的要点列表（- ）排版。"),
+                                                    (crate::i18n::t("settings.writing.example_default"), ""),
+                                                    (crate::i18n::t("settings.writing.example_concise"), ex_concise),
+                                                    (crate::i18n::t("settings.writing.example_formal"), ex_formal),
+                                                    (crate::i18n::t("settings.writing.example_bullets"), ex_bullets),
                                                 ]
                                                 .into_iter()
                                                 .enumerate()
@@ -550,8 +579,8 @@ impl SettingsView {
                                                         },
                                                         cx,
                                                     )
-                                                }),
-                                            ),
+                                                })
+                                            }),
                                     ),
                             ),
                     ),
@@ -562,21 +591,22 @@ impl SettingsView {
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(ui::section_label("个人词库", None).text_color(ui::fg2(cx)))
+                    .child(ui::section_label(crate::i18n::t("settings.learning.section_title"), None).text_color(ui::fg2(cx)))
                     .child(
                         ui::card(cx)
                             .child(
                                 setting_row(
-                                    "自动学习词条",
-                                    "从历史成稿里提取产品名、人名与术语。高置信直接加入，其余进「待确认」。",
+                                    crate::i18n::t("settings.learning.auto_learn"),
+                                    crate::i18n::t("settings.learning.auto_learn_desc"),
                                     true,
                                     cx,
                                 )
                                 .child({
                                     let s = session_handle.clone();
+                                    let label = crate::i18n::t("settings.learning.auto_learn");
                                     Switch::new("switch-auto-learn")
                                         .checked(auto_learn_mode != AutoLearnMode::Off)
-                                        .accessibility_label("自动学习词条")
+                                        .accessibility_label(label)
                                         .on_change(move |checked, _, cx| {
                                             let mode = if *checked {
                                                 AutoLearnMode::Auto
@@ -591,8 +621,8 @@ impl SettingsView {
                             )
                             .child(
                                 setting_row(
-                                    "学习方式",
-                                    "自动入库更省事；只给建议更可控。",
+                                    crate::i18n::t("settings.learning.mode"),
+                                    crate::i18n::t("settings.learning.mode_desc"),
                                     true,
                                     cx,
                                 )
@@ -620,16 +650,17 @@ impl SettingsView {
                             )
                             .child(
                                 setting_row(
-                                    "从粘贴后的修正中学习",
-                                    "粘贴完成 8 秒后读取一次前台输入框，只提取你改动里的术语与拼写，不保存整段内容。",
+                                    crate::i18n::t("settings.learning.learn_from_edits"),
+                                    crate::i18n::t("settings.learning.learn_from_edits_desc"),
                                     true,
                                     cx,
                                 )
                                 .child({
                                     let s = session_handle.clone();
+                                    let label = crate::i18n::t("settings.learning.learn_from_edits");
                                     Switch::new("switch-learn-edits")
                                         .checked(learn_from_edits)
-                                        .accessibility_label("从粘贴后的修正中学习")
+                                        .accessibility_label(label)
                                         .on_change(move |checked, _, cx| {
                                             let enabled = *checked;
                                             s.update(cx, |session, cx| {
@@ -645,7 +676,7 @@ impl SettingsView {
                                     .text_size(px(13.0))
                                     .line_height(rems(1.45))
                                     .text_color(ui::fg3(cx))
-                                    .child("AI 提取会把历史文本发送到当前 AI Gateway；不发送录音。关闭自动学习后，手动词条仍然生效。"),
+                                    .child(crate::i18n::t("settings.learning.privacy_hint")),
                             ),
                     ),
             ))
@@ -655,21 +686,55 @@ impl SettingsView {
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(ui::section_label("本机", None).text_color(ui::fg2(cx)))
+                    .child(ui::section_label(crate::i18n::t("settings.system.section_title"), None).text_color(ui::fg2(cx)))
                     .child(
                         ui::card(cx)
                             .child(
                                 setting_row(
-                                    "在 Dock 中显示",
-                                    "打开后，图标出现在 Dock。菜单栏里的图标仍然在。",
+                                    crate::i18n::t("settings.language.title"),
+                                    crate::i18n::t("settings.language.subtitle"),
+                                    true,
+                                    cx,
+                                )
+                                .child(
+                                    choice_row().children(
+                                        [
+                                            (crate::i18n::Preference::System, crate::i18n::t("settings.language.system")),
+                                            (crate::i18n::Preference::ZhHans, "简体中文"),
+                                            (crate::i18n::Preference::En, "English"),
+                                        ]
+                                        .into_iter()
+                                        .map(|(pref, label)| {
+                                            let active = ui_language == pref;
+                                            let s = session_handle.clone();
+                                            mode_chip(
+                                                format!("lang-{pref:?}"),
+                                                label,
+                                                active,
+                                                move |_, cx| {
+                                                    s.update(cx, |session, cx| {
+                                                        session.set_ui_language(pref, cx);
+                                                    });
+                                                },
+                                                cx,
+                                            )
+                                        }),
+                                    ),
+                                ),
+                            )
+                            .child(
+                                setting_row(
+                                    crate::i18n::t("settings.system.dock"),
+                                    crate::i18n::t("settings.system.dock_desc"),
                                     true,
                                     cx,
                                 )
                                 .child({
                                     let s = session_handle.clone();
+                                    let label = crate::i18n::t("settings.system.dock");
                                     Switch::new("switch-show-dock")
                                         .checked(show_dock)
-                                        .accessibility_label("在 Dock 中显示")
+                                        .accessibility_label(label)
                                         .on_change(move |checked, _, cx| {
                                             let val = *checked;
                                             s.update(cx, |session, cx| {
@@ -680,14 +745,14 @@ impl SettingsView {
                             )
                             .child(
                                 setting_row(
-                                    "数据位置",
+                                    crate::i18n::t("settings.system.data_dir"),
                                     &data_dir,
                                     false,
                                     cx,
                                 )
                                 .child(button(
                                     "open-data-dir",
-                                    "在 Finder 中打开",
+                                    crate::i18n::t("settings.system.open_finder"),
                                     false,
                                     move |_, _| {
                                         if let Ok(dir) = Store::data_dir() {

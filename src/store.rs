@@ -99,15 +99,15 @@ impl TriggerMode {
     #[allow(dead_code)]
     pub fn label(self) -> &'static str {
         match self {
-            Self::Toggle => "单击切换（按一下开始，再按一下完成）",
-            Self::Hold => "按住说话（按住录音，松开立即转写）",
+            Self::Toggle => crate::i18n::t("trigger_mode.toggle"),
+            Self::Hold => crate::i18n::t("trigger_mode.hold"),
         }
     }
 
     pub fn short_label(self) -> &'static str {
         match self {
-            Self::Toggle => "单击切换",
-            Self::Hold => "按住说话",
+            Self::Toggle => crate::i18n::t("trigger_mode.toggle_short"),
+            Self::Hold => crate::i18n::t("trigger_mode.hold_short"),
         }
     }
 }

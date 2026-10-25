@@ -10,18 +10,18 @@ pub enum Stage {
 impl Stage {
     pub fn label(self) -> &'static str {
         match self {
-            Stage::Transcribe => "正在转写语音",
-            Stage::Polish => "正在智能润色",
-            Stage::Insert => "正在贴入窗口",
+            Stage::Transcribe => crate::i18n::t("stage.transcribe"),
+            Stage::Polish => crate::i18n::t("stage.polish"),
+            Stage::Insert => crate::i18n::t("stage.insert"),
         }
     }
 
     #[allow(dead_code)]
     pub fn short_label(self) -> &'static str {
         match self {
-            Stage::Transcribe => "转写",
-            Stage::Polish => "润色",
-            Stage::Insert => "贴入",
+            Stage::Transcribe => crate::i18n::t("stage.transcribe_short"),
+            Stage::Polish => crate::i18n::t("stage.polish_short"),
+            Stage::Insert => crate::i18n::t("stage.insert_short"),
         }
     }
 
@@ -47,7 +47,7 @@ impl Notice {
     pub fn text(&self) -> &str {
         match self {
             Notice::Done(text) => text,
-            Notice::Copied => "已复制，请手动粘贴",
+            Notice::Copied => crate::i18n::t("notice.copied"),
             Notice::Warn(text) | Notice::Error(text) => text,
         }
     }

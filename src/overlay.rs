@@ -210,11 +210,14 @@ fn hud_shell() -> gpui_kit::Div {
 fn listening_view(wave: [f32; crate::capture::WAVE_BARS], elapsed: Duration) -> gpui_kit::Div {
     let near_limit = elapsed.as_secs() >= crate::tasks::MAX_RECORDING_SECS - 60;
     let timer = if near_limit {
-        format!(
-            "剩余 {}",
-            mmss(Duration::from_secs(
-                crate::tasks::MAX_RECORDING_SECS.saturating_sub(elapsed.as_secs())
-            ))
+        crate::i18n::t_args(
+            "overlay.remaining",
+            &[(
+                "time",
+                &mmss(Duration::from_secs(
+                    crate::tasks::MAX_RECORDING_SECS.saturating_sub(elapsed.as_secs()),
+                )),
+            )],
         )
     } else {
         mmss(elapsed)
@@ -316,7 +319,7 @@ fn working_view(progress: f32) -> gpui_kit::Div {
                             div()
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(rgb(0xf2fcf6))
-                                .child("处理中"),
+                                .child(crate::i18n::t("overlay.processing")),
                         ),
                 )
                 .child(esc_hint()),

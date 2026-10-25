@@ -42,7 +42,7 @@ fn lookup(language: Language, key: &str) -> Option<&'static str> {
 }
 
 /// Translate `key` for the current language.
-pub fn t(key: &str) -> &str {
+pub fn t(key: &'static str) -> &'static str {
     lookup(current(), key)
         .or_else(|| lookup(Language::En, key))
         .unwrap_or_else(|| {
@@ -52,8 +52,7 @@ pub fn t(key: &str) -> &str {
 }
 
 /// Translate `key` and substitute `{name}` placeholders.
-#[allow(dead_code)] // first used by parameterized copy in the next migration step
-pub fn t_args(key: &str, args: &[(&str, &str)]) -> String {
+pub fn t_args(key: &'static str, args: &[(&str, &str)]) -> String {
     substitute(t(key), args)
 }
 
@@ -123,18 +122,18 @@ mod tests {
         let mut keys = BTreeSet::new();
         for file in files {
             let text = std::fs::read_to_string(file).unwrap();
-            for marker in ["t(\"", "t_args(\""] {
+            for marker in ["t(", "t_args("] {
                 let mut rest = text.as_str();
                 while let Some(at) = rest.find(marker) {
                     let preceded_by_ident = rest[..at]
                         .chars()
                         .next_back()
                         .is_some_and(|c| c.is_alphanumeric() || c == '_');
-                    let after = &rest[at + marker.len()..];
-                    if !preceded_by_ident {
-                        if let Some(end) = after.find('"') {
-                            let key = &after[..end];
-                            // Skip test fixtures and prose; real keys are dotted identifiers.
+                    let after = rest[at + marker.len()..].trim_start();
+                    if !preceded_by_ident && after.starts_with('"') {
+                        let after_quote = &after[1..];
+                        if let Some(end) = after_quote.find('"') {
+                            let key = &after_quote[..end];
                             if key.contains('.')
                                 && key
                                     .chars()
@@ -144,7 +143,7 @@ mod tests {
                             }
                         }
                     }
-                    rest = after;
+                    rest = &rest[at + marker.len()..];
                 }
             }
         }

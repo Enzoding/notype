@@ -297,8 +297,16 @@ impl Session {
         let (learned, corrections) = persist_learning(&self.store, &learning);
         self.refresh_learning(cx);
         if learned > 0 || corrections > 0 {
-            self.mining_status =
-                format!("{label}：学习 {learned} 个词条，{corrections} 条拼写纠正。");
+            let learned_str = learned.to_string();
+            let corrections_str = corrections.to_string();
+            self.mining_status = crate::i18n::t_args(
+                "mining.status_learned",
+                &[
+                    ("label", label),
+                    ("learned", &learned_str),
+                    ("corrections", &corrections_str),
+                ],
+            );
         }
         cx.notify();
     }

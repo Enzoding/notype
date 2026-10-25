@@ -37,7 +37,7 @@ pub fn format_duration_ms(ms: i64) -> String {
 
 pub fn format_relative_time(ts: i64) -> String {
     if ts <= 0 {
-        return "早期记录".into();
+        return crate::i18n::t("time.early").into();
     }
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -45,13 +45,13 @@ pub fn format_relative_time(ts: i64) -> String {
         .unwrap_or(ts);
     let diff = (now - ts).max(0);
     if diff < 45 {
-        "刚刚".into()
+        crate::i18n::t("time.just_now").into()
     } else if diff < 3600 {
-        format!("{} 分钟前", diff / 60)
+        crate::i18n::t_args("time.minutes_ago", &[("n", &(diff / 60).to_string())])
     } else if diff < 86_400 {
-        format!("{} 小时前", diff / 3600)
+        crate::i18n::t_args("time.hours_ago", &[("n", &(diff / 3600).to_string())])
     } else {
-        format!("{} 天前", diff / 86_400)
+        crate::i18n::t_args("time.days_ago", &[("n", &(diff / 86_400).to_string())])
     }
 }
 
@@ -83,6 +83,6 @@ mod tests {
 
     #[test]
     fn relative_time_handles_zero_and_future() {
-        assert_eq!(format_relative_time(0), "早期记录");
+        assert_eq!(format_relative_time(0), crate::i18n::t("time.early"));
     }
 }

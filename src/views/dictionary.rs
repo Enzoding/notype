@@ -39,9 +39,10 @@ impl SettingsView {
         let app = &**cx;
         let auto_on = auto_mode != AutoLearnMode::Off;
         let status_text = if last_mined_at > 0 {
-            format!("上次学习：{}", format_relative_time(last_mined_at))
+            let time_str = format_relative_time(last_mined_at);
+            crate::i18n::t_args("dictionary.last_mined_at", &[("time", &time_str)])
         } else {
-            "未执行过学习".to_string()
+            crate::i18n::t("dictionary.last_mined_never").to_string()
         };
 
         let existing_phrases: HashSet<String> =
@@ -80,13 +81,13 @@ impl SettingsView {
                                         div()
                                             .text_size(rems(0.875))
                                             .font_weight(FontWeight::MEDIUM)
-                                            .child("添加专属词条与设置"),
+                                            .child(crate::i18n::t("dictionary.title")),
                                     )
                                     .child(
                                         div()
                                             .text_size(rems(0.71875))
                                             .text_color(ui::fg2(cx))
-                                            .child("输入产品名、人名或技术术语（支持逗号/换行批量输入），转写与润色将严格锁定拼写。"),
+                                            .child(crate::i18n::t("dictionary.subtitle")),
                                     ),
                             )
                             .child(
@@ -106,16 +107,17 @@ impl SettingsView {
                                                     .text_size(rems(0.75))
                                                     .font_weight(FontWeight::MEDIUM)
                                                     .text_color(ui::fg(cx))
-                                                    .child("自动学习新词"),
+                                                    .child(crate::i18n::t("dictionary.auto_learn")),
                                             )
                                             .when(mining, |row| {
                                                 row.child(Spinner::new().with_size(Size::Small))
                                             })
                                             .child({
                                                 let s = session_handle.clone();
+                                                let label = crate::i18n::t("dictionary.auto_learn");
                                                 Switch::new("auto-learn-switch")
                                                     .checked(auto_on)
-                                                    .accessibility_label("自动学习新词")
+                                                    .accessibility_label(label)
                                                     .on_change(move |checked, _, cx| {
                                                         let mode = if *checked {
                                                             AutoLearnMode::Auto
@@ -133,7 +135,11 @@ impl SettingsView {
                                         let s = session_handle.clone();
                                         button(
                                             "learn-now-btn",
-                                            if mining { "分析中…" } else { "立即分析学习" },
+                                            if mining {
+                                                crate::i18n::t("dictionary.learning")
+                                            } else {
+                                                crate::i18n::t("dictionary.learn_now")
+                                            },
                                             false,
                                             move |_, cx| {
                                                 s.update(cx, |session, cx| session.learn_now(cx));
@@ -146,7 +152,7 @@ impl SettingsView {
                                         let v = view.clone();
                                         button(
                                             "import-phrases-clipboard",
-                                            "从剪贴板导入",
+                                            crate::i18n::t("dictionary.import_clipboard"),
                                             false,
                                             move |_, cx| {
                                                 if let Some(clip) = paste::read_from_clipboard() {
@@ -172,7 +178,11 @@ impl SettingsView {
                                             copied_token.as_deref() == Some("dict-exported");
                                         row.child(button(
                                             "export-phrases-clipboard",
-                                            if is_copied { "已复制全部" } else { "导出全部" },
+                                            if is_copied {
+                                                crate::i18n::t("dictionary.copied_all")
+                                            } else {
+                                                crate::i18n::t("dictionary.export_all")
+                                            },
                                             false,
                                             move |_, cx| {
                                                 if paste::copy_to_clipboard(&all_text) {
@@ -200,11 +210,18 @@ impl SettingsView {
                             .child({
                                 let input = phrase_input.clone();
                                 let target = session_handle.clone();
-                                button("add-phrase-btn", "添加词条", true, move |window, cx| {
-                                    let value = input.read(cx).value().to_string();
-                                    target.update(cx, |session, cx| session.add_phrase(&value, cx));
-                                    input.update(cx, |inp, cx| inp.set_value("", window, cx));
-                                })
+                                button(
+                                    "add-phrase-btn",
+                                    crate::i18n::t("dictionary.add_phrase"),
+                                    true,
+                                    move |window, cx| {
+                                        let value = input.read(cx).value().to_string();
+                                        target.update(cx, |session, cx| {
+                                            session.add_phrase(&value, cx)
+                                        });
+                                        input.update(cx, |inp, cx| inp.set_value("", window, cx));
+                                    },
+                                )
                             }),
                     )
                     // Preset quick-add chips
@@ -218,7 +235,7 @@ impl SettingsView {
                                 div()
                                     .text_size(rems(0.6875))
                                     .text_color(ui::fg3(cx))
-                                    .child("常用快捷推荐："),
+                                    .child(crate::i18n::t("dictionary.preset_recommendation")),
                             )
                             .children(PRESET_PHRASES.iter().enumerate().map(|(idx, word)| {
                                 let word_str = *word;
@@ -238,11 +255,7 @@ impl SettingsView {
                                         ui::well_bg(cx)
                                     })
                                     .text_size(rems(0.6875))
-                                    .text_color(if exists {
-                                        ui::accent(cx)
-                                    } else {
-                                        ui::fg2(cx)
-                                    })
+                                    .text_color(if exists { ui::accent(cx) } else { ui::fg2(cx) })
                                     .when(!exists, |chip| {
                                         chip.cursor_pointer()
                                             .hover(|st| st.bg(ui::card_hover(cx)))
@@ -280,11 +293,13 @@ impl SettingsView {
                     .gap(px(8.0))
                     .child(
                         ui::section_label(
-                            "已启用词条",
-                            Some(format!(
-                                "共 {} 项 · 前 {} 项优先锁定拼写",
-                                total_phrases,
-                                crate::mining::ACTIVE_PHRASE_LIMIT
+                            crate::i18n::t("dictionary.active_phrases"),
+                            Some(crate::i18n::t_args(
+                                "dictionary.active_phrases_sub",
+                                &[
+                                    ("total", &total_phrases.to_string()),
+                                    ("limit", &crate::mining::ACTIVE_PHRASE_LIMIT.to_string()),
+                                ],
                             )),
                         )
                         .text_color(ui::fg2(cx))
@@ -295,8 +310,8 @@ impl SettingsView {
                             .when(displayed_phrases.is_empty(), |card| {
                                 card.child(empty_state(
                                     IconName::BookOpen,
-                                    "词库还是空的",
-                                    "在上方输入词条名称即可添加；也可点击常用快捷推荐一键加入，或开启自动学习随日常口述自动演进。",
+                                    crate::i18n::t("dictionary.empty_title"),
+                                    crate::i18n::t("dictionary.empty_subtitle"),
                                     cx,
                                 ))
                             })
@@ -308,17 +323,19 @@ impl SettingsView {
                                     hover: ui::card_hover(cx),
                                     dim: ui::fg2(cx),
                                 };
-                                displayed_phrases.into_iter().enumerate().map(move |(index, phrase)| {
-                                    phrase_row(
-                                        phrase.id,
-                                        phrase.phrase,
-                                        phrase.source,
-                                        phrase.hits,
-                                        !has_more && index + 1 == count,
-                                        session.clone(),
-                                        colors,
-                                    )
-                                })
+                                displayed_phrases.into_iter().enumerate().map(
+                                    move |(index, phrase)| {
+                                        phrase_row(
+                                            phrase.id,
+                                            phrase.phrase,
+                                            phrase.source,
+                                            phrase.hits,
+                                            !has_more && index + 1 == count,
+                                            session.clone(),
+                                            colors,
+                                        )
+                                    },
+                                )
                             })
                             .when(has_more, |card| {
                                 let v_more = view.clone();
@@ -335,8 +352,12 @@ impl SettingsView {
                                             div()
                                                 .text_size(rems(0.75))
                                                 .text_color(ui::fg3(cx))
-                                                .child(format!(
-                                                    "已显示前 {to_display} 项，共 {total_phrases} 项词条"
+                                                .child(crate::i18n::t_args(
+                                                    "dictionary.displaying_items",
+                                                    &[
+                                                        ("displayed", &to_display.to_string()),
+                                                        ("total", &total_phrases.to_string()),
+                                                    ],
                                                 )),
                                         )
                                         .child(
@@ -346,7 +367,7 @@ impl SettingsView {
                                                 .gap(px(8.0))
                                                 .child(button(
                                                     "load-more-phrases",
-                                                    "加载更多 (+50)",
+                                                    crate::i18n::t("dictionary.load_more"),
                                                     false,
                                                     move |_, cx| {
                                                         v_more.update(cx, |view, cx| {
@@ -359,7 +380,7 @@ impl SettingsView {
                                                 ))
                                                 .child(button(
                                                     "show-all-phrases",
-                                                    "显示全部",
+                                                    crate::i18n::t("dictionary.show_all"),
                                                     false,
                                                     move |_, cx| {
                                                         v_all.update(cx, |view, cx| {
@@ -383,9 +404,15 @@ impl SettingsView {
                         .flex_col()
                         .gap(px(8.0))
                         .child(
-                            ui::section_label("拼写纠正", Some(format!("共 {count} 条")))
-                                .text_color(ui::fg2(app))
-                                .justify_between(),
+                            ui::section_label(
+                                crate::i18n::t("dictionary.corrections_title"),
+                                Some(crate::i18n::t_args(
+                                    "dictionary.corrections_count",
+                                    &[("count", &count.to_string())],
+                                )),
+                            )
+                            .text_color(ui::fg2(app))
+                            .justify_between(),
                         )
                         .child(
                             ui::card(app)
@@ -397,67 +424,72 @@ impl SettingsView {
                                         .border_color(ui::hairline(app))
                                         .text_size(rems(0.6875))
                                         .text_color(ui::fg3(app))
-                                        .child("下次转写后自动替换为「正确写法」，来自你在历史或粘贴后的修正。"),
+                                        .child(crate::i18n::t("dictionary.corrections_desc")),
                                 )
                                 .children({
                                     let last = corrections.len();
                                     let session = s;
-                                    corrections.into_iter().enumerate().map(move |(index, rule)| {
-                                        let wrong = rule.wrong;
-                                        let right = rule.right;
-                                        let s = session.clone();
-                                        let del_wrong = wrong.clone();
-                                        let del_right = right.clone();
-                                        div()
-                                            .id(SharedString::from(format!("correction-{index}")))
-                                            .flex()
-                                            .items_center()
-                                            .justify_between()
-                                            .gap(px(12.0))
-                                            .px(px(14.0))
-                                            .py(px(9.0))
-                                            .when(index + 1 != last, |row| {
-                                                row.border_b_1().border_color(ui::hairline(app))
-                                            })
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .items_center()
-                                                    .gap(px(8.0))
-                                                    .child(
-                                                        div()
-                                                            .text_size(rems(0.75))
-                                                            .text_color(ui::fg3(app))
-                                                            .child(wrong),
-                                                    )
-                                                    .child(
-                                                        Icon::new(IconName::ArrowRight)
-                                                            .size(px(12.0))
-                                                            .text_color(ui::fg3(app)),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .text_size(rems(0.8125))
-                                                            .font_weight(FontWeight::MEDIUM)
-                                                            .child(right),
+                                    corrections
+                                        .into_iter()
+                                        .enumerate()
+                                        .map(move |(index, rule)| {
+                                            let wrong = rule.wrong;
+                                            let right = rule.right;
+                                            let s = session.clone();
+                                            let del_wrong = wrong.clone();
+                                            let del_right = right.clone();
+                                            div()
+                                                .id(SharedString::from(format!(
+                                                    "correction-{index}"
+                                                )))
+                                                .flex()
+                                                .items_center()
+                                                .justify_between()
+                                                .gap(px(12.0))
+                                                .px(px(14.0))
+                                                .py(px(9.0))
+                                                .when(index + 1 != last, |row| {
+                                                    row.border_b_1().border_color(ui::hairline(app))
+                                                })
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap(px(8.0))
+                                                        .child(
+                                                            div()
+                                                                .text_size(rems(0.75))
+                                                                .text_color(ui::fg3(app))
+                                                                .child(wrong),
+                                                        )
+                                                        .child(
+                                                            Icon::new(IconName::ArrowRight)
+                                                                .size(px(12.0))
+                                                                .text_color(ui::fg3(app)),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_size(rems(0.8125))
+                                                                .font_weight(FontWeight::MEDIUM)
+                                                                .child(right),
+                                                        ),
+                                                )
+                                                .child(icon_button(
+                                                    format!("delete-correction-{index}"),
+                                                    IconName::Close,
+                                                    crate::i18n::t(
+                                                        "dictionary.action_delete_correction",
                                                     ),
-                                            )
-                                            .child(icon_button(
-                                                format!("delete-correction-{index}"),
-                                                IconName::Close,
-                                                "删除拼写纠正",
-                                                move |_, cx| {
-                                                    s.update(cx, |session, cx| {
-                                                        session.delete_correction(
-                                                            &del_wrong,
-                                                            &del_right,
-                                                            cx,
-                                                        );
-                                                    });
-                                                },
-                                                app,
-                                            ))
-                                    })
+                                                    move |_, cx| {
+                                                        s.update(cx, |session, cx| {
+                                                            session.delete_correction(
+                                                                &del_wrong, &del_right, cx,
+                                                            );
+                                                        });
+                                                    },
+                                                    app,
+                                                ))
+                                        })
                                 }),
                         ),
                 )

@@ -55,11 +55,11 @@ impl Session {
         self.connections.polish_model = p.polish_model;
         self.connections.key = self.provider_key(kind);
         self.connections.key_status = if self.connections.key.is_empty() {
-            "未配置当前渠道密钥"
+            crate::i18n::t("settings.key.channel_not_configured")
         } else {
-            "密钥已保存在钥匙串"
+            crate::i18n::t("settings.key.saved_in_keychain")
         }
-        .into();
+        .to_string();
         self.connections.gateway_test_status = None;
         self.connections.model_status.clear();
         cx.notify();
@@ -100,7 +100,7 @@ impl Session {
         let key = self.provider_key(kind);
         let tested_base = profile.base_url.clone();
         self.connections.models_loading = true;
-        self.connections.model_status = "正在获取模型目录…".into();
+        self.connections.model_status = crate::i18n::t("settings.catalog.fetching").to_string();
         cx.notify();
         cx.spawn(async move |this, cx| {
             let result = cx
@@ -112,7 +112,8 @@ impl Session {
                 match result {
                     Ok(models) => {
                         if s.profile(kind).base_url != tested_base {
-                            s.connections.model_status = "渠道地址已变化，请重新更新目录".into();
+                            s.connections.model_status =
+                                crate::i18n::t("settings.catalog.endpoint_changed").to_string();
                             cx.notify();
                             return;
                         }
@@ -125,9 +126,15 @@ impl Session {
                             [if kind == ProviderKind::Vercel { 0 } else { 1 }] =
                             crate::providers::ModelCatalog::from_entries(models);
                         s.connections.model_status =
-                            "目录已更新；模型仍需转写或润色测试验证".into();
+                            crate::i18n::t("settings.catalog.updated").to_string();
                     }
-                    Err(err) => s.connections.model_status = format!("{err}；保留上次目录"),
+                    Err(err) => {
+                        let err_str = err.to_string();
+                        s.connections.model_status = crate::i18n::t_args(
+                            "settings.catalog.failed_keep_last",
+                            &[("error", &err_str)],
+                        );
+                    }
                 }
                 cx.notify();
             });
@@ -194,7 +201,10 @@ impl Session {
                     && s.connections.transcribe_model == model
                 {
                     let result = match result {
-                        Ok(()) => (true, "转写测试成功".into()),
+                        Ok(()) => (
+                            true,
+                            crate::i18n::t("settings.transcription.test_success").to_string(),
+                        ),
                         Err(e) => (false, e),
                     };
                     s.connections.checks[kind.index()].transcription = Some(result.clone());

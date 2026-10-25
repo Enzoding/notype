@@ -68,19 +68,19 @@ pub fn history_card_row(
                         .child(ui::pill(app_name, ui::fg(cx), ui::well_bg(cx)))
                         .child(ui::pill(mode_label, ui::accent(cx), ui::accent_soft(cx)))
                         .when(!duration_str.is_empty(), |row| {
-                            row.child(
-                                div()
-                                    .text_size(rems(0.6875))
-                                    .text_color(ui::fg3(cx))
-                                    .child(format!("录音 {duration_str}")),
-                            )
+                            row.child(div().text_size(rems(0.6875)).text_color(ui::fg3(cx)).child(
+                                crate::i18n::t_args(
+                                    "history.audio_duration",
+                                    &[("duration", &duration_str)],
+                                ),
+                            ))
                         })
-                        .child(
-                            div()
-                                .text_size(rems(0.6875))
-                                .text_color(ui::fg3(cx))
-                                .child(format!("{chars_count} 字 · {rel_time}")),
-                        ),
+                        .child(div().text_size(rems(0.6875)).text_color(ui::fg3(cx)).child(
+                            crate::i18n::t_args(
+                                "history.meta",
+                                &[("count", &chars_count.to_string()), ("time", &rel_time)],
+                            ),
+                        )),
                 )
                 .child(
                     div()
@@ -96,7 +96,11 @@ pub fn history_card_row(
                                 } else {
                                     IconName::Play
                                 },
-                                if is_playing { "停止" } else { "回放" },
+                                if is_playing {
+                                    crate::i18n::t("history.action_stop")
+                                } else {
+                                    crate::i18n::t("history.action_replay")
+                                },
                                 move |_, cx| {
                                     s.update(cx, |session, cx| {
                                         session.toggle_play_history(id, cx);
@@ -111,9 +115,9 @@ pub fn history_card_row(
                                 format!("toggle-raw-{id}"),
                                 IconName::FileText,
                                 if is_expanded {
-                                    "收起原文"
+                                    crate::i18n::t("history.action_collapse_raw")
                                 } else {
-                                    "对比原文"
+                                    crate::i18n::t("history.action_compare_raw")
                                 },
                                 move |_, cx| {
                                     v.update(cx, |view, cx| {
@@ -134,7 +138,11 @@ pub fn history_card_row(
                                 } else {
                                     IconName::Copy
                                 },
-                                if is_pol_copied { "已复制" } else { "复制" },
+                                if is_pol_copied {
+                                    crate::i18n::t("history.action_copied")
+                                } else {
+                                    crate::i18n::t("history.action_copy")
+                                },
                                 move |_, cx| {
                                     if paste::copy_to_clipboard(&text_for_copy) {
                                         v.update(cx, |view, cx| {
@@ -151,7 +159,11 @@ pub fn history_card_row(
                             small_action_pill(
                                 format!("fix-{id}"),
                                 IconName::Replace,
-                                if is_editing { "收起修正" } else { "修正" },
+                                if is_editing {
+                                    crate::i18n::t("history.action_collapse_fix")
+                                } else {
+                                    crate::i18n::t("history.action_fix")
+                                },
                                 move |window, cx| {
                                     if is_editing {
                                         v.update(cx, |view, cx| {
@@ -179,9 +191,9 @@ pub fn history_card_row(
                                 format!("repolish-{id}"),
                                 IconName::RefreshCw,
                                 if is_repolishing {
-                                    "润色中…"
+                                    crate::i18n::t("history.action_repolishing")
                                 } else {
-                                    "重润色"
+                                    crate::i18n::t("history.action_repolish")
                                 },
                                 move |_, cx| {
                                     s.update(cx, |session, cx| {
@@ -196,7 +208,7 @@ pub fn history_card_row(
                             icon_button(
                                 format!("del-hist-{id}"),
                                 IconName::Close,
-                                "删除记录",
+                                crate::i18n::t("history.action_delete"),
                                 move |_, cx| {
                                     s.update(cx, |session, cx| {
                                         session.delete_history(id, cx);
@@ -232,7 +244,7 @@ pub fn history_card_row(
                         div()
                             .text_size(rems(0.6875))
                             .text_color(ui::fg3(cx))
-                            .child("修正后会保存到历史，并只学习你改动里的术语。"),
+                            .child(crate::i18n::t("history.fix_hint")),
                     )
                     .child(
                         div()
@@ -247,7 +259,7 @@ pub fn history_card_row(
                             .gap(px(8.0))
                             .child(button(
                                 "cancel-history-fix",
-                                "取消",
+                                crate::i18n::t("history.cancel"),
                                 false,
                                 move |_, cx| {
                                     cancel_view.update(cx, |view, cx| {
@@ -258,7 +270,7 @@ pub fn history_card_row(
                             ))
                             .child(button(
                                 "save-history-fix",
-                                "保存修正并学习",
+                                crate::i18n::t("history.save_fix"),
                                 true,
                                 move |_, cx| {
                                     let corrected = correction_input.read(cx).value().to_string();
@@ -301,7 +313,7 @@ pub fn history_card_row(
                                     .text_size(rems(0.6875))
                                     .font_weight(FontWeight::MEDIUM)
                                     .text_color(ui::fg3(cx))
-                                    .child("语音转写原文（未润色）"),
+                                    .child(crate::i18n::t("history.raw_transcript_title")),
                             )
                             .child(small_action_pill(
                                 format!("copy-raw-btn-{id}"),
@@ -311,9 +323,9 @@ pub fn history_card_row(
                                     IconName::Copy
                                 },
                                 if is_raw_copied {
-                                    "已复制原文"
+                                    crate::i18n::t("history.action_copied_raw")
                                 } else {
-                                    "复制原文"
+                                    crate::i18n::t("history.action_copy_raw")
                                 },
                                 move |_, cx| {
                                     if paste::copy_to_clipboard(&raw_copy) {

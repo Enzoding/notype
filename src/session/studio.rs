@@ -17,7 +17,7 @@ impl Session {
             return;
         }
         if self.provider_key(self.connections.kind).is_empty() {
-            self.studio_output = "请先在设置中填写并保存 API Key。".into();
+            self.studio_output = crate::i18n::t("studio.key_required").to_string();
             cx.notify();
             return;
         }
@@ -70,7 +70,9 @@ impl Session {
                         }
                     }
                     Err(err) => {
-                        session.studio_output = format!("润色失败：{err}");
+                        let err_str = err.to_string();
+                        session.studio_output =
+                            crate::i18n::t_args("studio.polish_failed", &[("error", &err_str)]);
                     }
                 }
                 cx.notify();
@@ -95,6 +97,6 @@ impl Session {
         self.studio_output = corrected.to_string();
         let known: Vec<String> = self.phrases.iter().map(|p| p.phrase.clone()).collect();
         let learning = mining::learn_from_edit(&old, corrected, &old, 0, EditMode::General, &known);
-        self.persist_and_refresh(learning, "润色修正", cx);
+        self.persist_and_refresh(learning, crate::i18n::t("studio.label_correction"), cx);
     }
 }

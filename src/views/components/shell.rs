@@ -124,11 +124,14 @@ pub fn sidebar_status_card(
                                 .text_size(rems(0.75))
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(if is_rec {
-                                    format!("录音中 {}", mmss(elapsed))
+                                    crate::i18n::t_args(
+                                        "shell.recording",
+                                        &[("time", &mmss(elapsed))],
+                                    )
                                 } else if has_key {
-                                    "可以口述".into()
+                                    crate::i18n::t("shell.ready_to_dictate").into()
                                 } else {
-                                    "还没有 API Key".into()
+                                    crate::i18n::t("shell.no_api_key").into()
                                 }),
                         ),
                 )
@@ -147,9 +150,9 @@ pub fn sidebar_status_card(
         .child(button(
             "sidebar-quick-toggle",
             if is_rec {
-                "完成并转写"
+                crate::i18n::t("shell.finish_and_transcribe")
             } else {
-                "立即开始口述"
+                crate::i18n::t("shell.start_dictation")
             },
             is_rec,
             move |_, cx| {
@@ -167,12 +170,21 @@ pub fn sidebar_status_card(
 
 pub fn status_pill(phase: &Phase, elapsed: Duration, cx: &App) -> impl IntoElement {
     let (color, label) = match phase {
-        Phase::Idle => (ui::ok(cx), "就绪".to_string()),
-        Phase::Listening => (ui::live(cx), format!("正在听 {}", mmss(elapsed))),
+        Phase::Idle => (ui::ok(cx), crate::i18n::t("shell.status_ready").to_string()),
+        Phase::Listening => (
+            ui::live(cx),
+            crate::i18n::t_args("shell.status_listening", &[("time", &mmss(elapsed))]),
+        ),
         Phase::Working(stage) => (ui::brand_teal(cx), stage.label().to_string()),
-        Phase::Message(Notice::Error(_)) => (ui::error(cx), "需要留意".to_string()),
-        Phase::Message(Notice::Warn(_)) => (ui::warn(cx), "需要留意".to_string()),
-        Phase::Message(_) => (ui::ok(cx), "已完成".to_string()),
+        Phase::Message(Notice::Error(_)) => (
+            ui::error(cx),
+            crate::i18n::t("shell.status_attention").to_string(),
+        ),
+        Phase::Message(Notice::Warn(_)) => (
+            ui::warn(cx),
+            crate::i18n::t("shell.status_attention").to_string(),
+        ),
+        Phase::Message(_) => (ui::ok(cx), crate::i18n::t("shell.status_done").to_string()),
     };
     div()
         .flex()

@@ -38,13 +38,16 @@ impl SettingsView {
         };
         let mut missing = Vec::new();
         if !setup.microphone_granted {
-            missing.push(format!("麦克风{}", session.microphone_access.label()));
+            missing.push(crate::i18n::t_args(
+                "setup.mic_status",
+                &[("status", session.microphone_access.label())],
+            ));
         }
         if !setup.accessibility_granted {
-            missing.push("辅助功能待授权".to_string());
+            missing.push(crate::i18n::t("setup.accessibility_pending").to_string());
         }
         let permissions = if missing.is_empty() {
-            "麦克风、辅助功能均已授权".to_string()
+            crate::i18n::t("setup.all_permissions_granted").to_string()
         } else {
             missing.join(" · ")
         };
@@ -65,7 +68,7 @@ impl SettingsView {
                             div()
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_size(px(16.0))
-                                .child("当前状态"),
+                                .child(crate::i18n::t("setup.current_status")),
                         )
                         .child(
                             div()
@@ -78,7 +81,10 @@ impl SettingsView {
                     if setup.ready() {
                         "OK".to_string()
                     } else {
-                        format!("{} 项待完成", setup.missing_count())
+                        crate::i18n::t_args(
+                            "setup.items_pending",
+                            &[("n", &setup.missing_count().to_string())],
+                        )
                     },
                     if setup.ready() {
                         ui::ok(cx)
@@ -95,17 +101,17 @@ impl SettingsView {
         for (target, label, complete, detail) in [
             (
                 SetupTarget::Key,
-                "API Key",
+                crate::i18n::t("setup.api_key_label"),
                 setup.key_configured,
                 if setup.key_configured {
-                    "当前渠道已配置".into()
+                    crate::i18n::t("setup.key_configured").into()
                 } else {
-                    "填写当前渠道的 API Key".into()
+                    crate::i18n::t("setup.key_missing").into()
                 },
             ),
             (
                 SetupTarget::Permissions,
-                "所需权限",
+                crate::i18n::t("setup.permissions_label"),
                 setup.permissions_ready(),
                 permissions,
             ),
@@ -133,7 +139,11 @@ impl SettingsView {
                                 div()
                                     .text_size(px(13.0))
                                     .text_color(if complete { ui::ok(cx) } else { ui::warn(cx) })
-                                    .child(if complete { "已完成" } else { "待完成" }),
+                                    .child(if complete {
+                                        crate::i18n::t("setup.status_completed")
+                                    } else {
+                                        crate::i18n::t("setup.status_pending")
+                                    }),
                             )
                             .child(
                                 div()
@@ -145,11 +155,11 @@ impl SettingsView {
                     .child(button(
                         format!("setup-{target:?}"),
                         if complete {
-                            "管理"
+                            crate::i18n::t("setup.action_manage")
                         } else if matches!(target, SetupTarget::Key) {
-                            "去配 Key"
+                            crate::i18n::t("setup.action_config_key")
                         } else {
-                            "去授权"
+                            crate::i18n::t("setup.action_authorize")
                         },
                         !complete,
                         move |window, cx| {

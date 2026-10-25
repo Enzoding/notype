@@ -57,45 +57,51 @@ impl SettingsView {
                     .flex_wrap()
                     .gap(px(16.0))
                     .child(metric_card(
-                        "累计口述",
+                        crate::i18n::t("overview.metrics.total_sessions"),
                         format!("{}", stats.total_sessions),
                         if stats.total_duration_ms > 0 {
-                            format!("累计时长 {}", format_duration_ms(stats.total_duration_ms))
+                            crate::i18n::t_args(
+                                "overview.metrics.total_duration",
+                                &[("duration", &format_duration_ms(stats.total_duration_ms))],
+                            )
                         } else {
-                            "随时按快捷键开始口述".into()
+                            crate::i18n::t("overview.metrics.shortcut_hint").into()
                         },
                         LucideIcon::Mic,
                         fills[0],
                         cx,
                     ))
                     .child(metric_card(
-                        "累计产出字数",
+                        crate::i18n::t("overview.metrics.total_chars"),
                         format!("{}", stats.total_chars),
                         if stats.saved_minutes >= 0.1 {
-                            format!("约节省 {:.1} 分钟打字时间", stats.saved_minutes)
+                            crate::i18n::t_args(
+                                "overview.metrics.saved_typing_time",
+                                &[("minutes", &format!("{:.1}", stats.saved_minutes))],
+                            )
                         } else {
-                            "自动去除口癖与标点整理".into()
+                            crate::i18n::t("overview.metrics.auto_cleanup_hint").into()
                         },
                         LucideIcon::Sparkles,
                         fills[1],
                         cx,
                     ))
                     .child(metric_card(
-                        "平均口述语速",
+                        crate::i18n::t("overview.metrics.speech_rate"),
                         if stats.avg_cpm > 0 {
                             format!("{}", stats.avg_cpm)
                         } else {
                             "—".into()
                         },
-                        "字 / 分钟（含中英混排）".into(),
+                        crate::i18n::t("overview.metrics.cpm_unit").into(),
                         LucideIcon::Gauge,
                         fills[2],
                         cx,
                     ))
                     .child(metric_card(
-                        "个人词库术语",
+                        crate::i18n::t("overview.metrics.vocabulary_terms"),
                         format!("{phrases_len}"),
-                        "转写与润色双重拼写锁定".into(),
+                        crate::i18n::t("overview.metrics.spelling_lock_hint").into(),
                         LucideIcon::BookOpen,
                         fills[3],
                         cx,
@@ -112,7 +118,13 @@ impl SettingsView {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .child(ui::section_label("最近口述", None).text_color(ui::fg2(cx)))
+                            .child(
+                                ui::section_label(
+                                    crate::i18n::t("overview.recent_dictations"),
+                                    None,
+                                )
+                                .text_color(ui::fg2(cx)),
+                            )
                             .when(!recent_history.is_empty(), |row| {
                                 let v = view.clone();
                                 row.child(
@@ -130,7 +142,7 @@ impl SettingsView {
                                                 cx.notify();
                                             });
                                         })
-                                        .child("查看全部历史")
+                                        .child(crate::i18n::t("overview.view_all_history"))
                                         .child(
                                             Icon::new(IconName::ChevronRight)
                                                 .size(px(12.0))
@@ -144,8 +156,8 @@ impl SettingsView {
                             .when(recent_history.is_empty(), |card| {
                                 card.child(empty_state(
                                     IconName::FileText,
-                                    "还没有口述记录",
-                                    "在任何应用中按下快捷键开始口述，完成后的成稿会自动归档到这里。",
+                                    crate::i18n::t("overview.empty_title"),
+                                    crate::i18n::t("overview.empty_subtitle"),
                                     cx,
                                 ))
                             })
@@ -156,27 +168,30 @@ impl SettingsView {
                                 let copied = copied_token.clone();
                                 let exp_ids = expanded_ids.clone();
                                 let a_ids = audio_ids.clone();
-                                recent_history.into_iter().enumerate().map(move |(idx, item)| {
-                                    let has_audio = a_ids.contains(&item.id);
-                                    let is_playing = playing_id == Some(item.id);
-                                    let is_expanded = exp_ids.contains(&item.id);
-                                    let is_repolishing = repolishing_id == Some(item.id);
-                                    let is_editing = editing_history_id == Some(item.id);
-                                    history_card_row(
-                                        item,
-                                        idx + 1 == count,
-                                        has_audio,
-                                        is_playing,
-                                        is_expanded,
-                                        is_repolishing,
-                                        is_editing,
-                                        copied.clone(),
-                                        correction_input.clone(),
-                                        s.clone(),
-                                        v.clone(),
-                                        cx,
-                                    )
-                                })
+                                recent_history
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(move |(idx, item)| {
+                                        let has_audio = a_ids.contains(&item.id);
+                                        let is_playing = playing_id == Some(item.id);
+                                        let is_expanded = exp_ids.contains(&item.id);
+                                        let is_repolishing = repolishing_id == Some(item.id);
+                                        let is_editing = editing_history_id == Some(item.id);
+                                        history_card_row(
+                                            item,
+                                            idx + 1 == count,
+                                            has_audio,
+                                            is_playing,
+                                            is_expanded,
+                                            is_repolishing,
+                                            is_editing,
+                                            copied.clone(),
+                                            correction_input.clone(),
+                                            s.clone(),
+                                            v.clone(),
+                                            cx,
+                                        )
+                                    })
                             }),
                     ),
             )

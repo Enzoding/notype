@@ -32,19 +32,19 @@ pub enum NavTab {
 impl NavTab {
     pub fn label(self) -> &'static str {
         match self {
-            NavTab::Overview => "工作台",
-            NavTab::History => "口述历史",
-            NavTab::Dictionary => "个人词库",
-            NavTab::Settings => "偏好设置",
+            NavTab::Overview => crate::i18n::t("nav.overview"),
+            NavTab::History => crate::i18n::t("nav.history"),
+            NavTab::Dictionary => crate::i18n::t("nav.dictionary"),
+            NavTab::Settings => crate::i18n::t("nav.settings"),
         }
     }
 
     pub fn subtitle(self) -> &'static str {
         match self {
-            NavTab::Overview => "口述数据统计与最近记录概览",
-            NavTab::History => "查阅、对比原文、回放录音或重新润色历史口述",
-            NavTab::Dictionary => "管理专有名词与术语，转写与润色将严格保持拼写",
-            NavTab::Settings => "快捷键、麦克风、润色和连接",
+            NavTab::Overview => crate::i18n::t("nav.overview_sub"),
+            NavTab::History => crate::i18n::t("nav.history_sub"),
+            NavTab::Dictionary => crate::i18n::t("nav.dictionary_sub"),
+            NavTab::Settings => crate::i18n::t("nav.settings_sub"),
         }
     }
 }
@@ -331,7 +331,9 @@ impl Render for SettingsView {
                                                         div()
                                                             .text_size(rems(0.65625))
                                                             .text_color(ui::fg3(cx))
-                                                            .child("AI 语音口述与润色"),
+                                                            .child(crate::i18n::t(
+                                                                "shell.app_tagline",
+                                                            )),
                                                     ),
                                             ),
                                     ),

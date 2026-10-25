@@ -12,12 +12,12 @@ use super::Session;
 
 pub(super) fn key_status(key: &str, source: &KeySource) -> String {
     if key.trim().is_empty() {
-        return "未配置 API Key".into();
+        return crate::i18n::t("settings.key.not_configured").to_string();
     }
     if matches!(source, KeySource::MigrationPending) {
-        "钥匙串迁移未完成，请检查授权并重新保存密钥".into()
+        crate::i18n::t("settings.key.migration_pending").to_string()
     } else {
-        "密钥已保存在钥匙串".into()
+        crate::i18n::t("settings.key.saved_in_keychain").to_string()
     }
 }
 
@@ -41,12 +41,12 @@ impl Session {
     /// Persist the interface language preference and switch to it immediately.
     /// Views reading `i18n::t` repaint on `notify`; surfaces outside GPUI
     /// (tray menu) are refreshed by their owners once they are localized.
-    #[allow(dead_code)] // wired to the language selector in the settings UI step
     pub fn set_ui_language(&mut self, preference: crate::i18n::Preference, cx: &mut Context<Self>) {
         if let Ok(store) = self.store.lock() {
             let _ = store.set_ui_language(preference);
         }
         self.ui_language = preference;
+        self.language_epoch = self.language_epoch.wrapping_add(1);
         crate::i18n::apply(preference);
         cx.notify();
     }
@@ -237,7 +237,13 @@ impl Session {
                     return;
                 }
                 let result = match res {
-                    Ok(ms) => (true, format!("润色模型已连通，延迟 {ms} ms")),
+                    Ok(ms) => {
+                        let ms_str = ms.to_string();
+                        (
+                            true,
+                            crate::i18n::t_args("settings.gateway.latency", &[("ms", &ms_str)]),
+                        )
+                    }
                     Err(err) => (false, err),
                 };
                 session.connections.checks[kind.index()].polishing = Some(result.clone());
@@ -251,7 +257,7 @@ impl Session {
     pub fn save_key(&mut self, value: &str, cx: &mut Context<Self>) {
         let value = value.trim();
         if value.is_empty() {
-            self.connections.key_status = "请先填写密钥".into();
+            self.connections.key_status = crate::i18n::t("settings.key.please_fill").to_string();
             cx.notify();
             return;
         }
@@ -266,7 +272,8 @@ impl Session {
                 } else {
                     1
                 }] = value.into();
-                self.connections.key_status = "密钥已保存在钥匙串".into();
+                self.connections.key_status =
+                    crate::i18n::t("settings.key.saved_in_keychain").to_string();
                 self.connections.gateway_test_status = None;
             }
             Err(err) => self.connections.key_status = err,
@@ -286,7 +293,8 @@ impl Session {
                     1
                 }]
                 .clear();
-                self.connections.key_status = "未配置当前渠道密钥".into();
+                self.connections.key_status =
+                    crate::i18n::t("settings.key.channel_not_configured").to_string();
                 self.connections.gateway_test_status = None;
             }
             Err(err) => self.connections.key_status = err,

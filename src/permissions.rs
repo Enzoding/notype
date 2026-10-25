@@ -28,11 +28,11 @@ impl MicrophoneAccess {
     }
     pub fn label(self) -> &'static str {
         match self {
-            Self::Authorized => "已授权",
-            Self::NotDetermined => "待授权",
-            Self::Denied => "未授权",
-            Self::Restricted => "受系统限制",
-            Self::Unknown => "待检查",
+            Self::Authorized => crate::i18n::t("permission.authorized"),
+            Self::NotDetermined => crate::i18n::t("permission.not_determined"),
+            Self::Denied => crate::i18n::t("permission.denied"),
+            Self::Restricted => crate::i18n::t("permission.restricted"),
+            Self::Unknown => crate::i18n::t("permission.unknown"),
         }
     }
 }

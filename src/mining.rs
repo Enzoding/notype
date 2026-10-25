@@ -65,9 +65,9 @@ impl AutoLearnMode {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Off => "关闭",
-            Self::Suggest => "只给建议",
-            Self::Auto => "自动入库",
+            Self::Off => crate::i18n::t("mining.auto_learn.off"),
+            Self::Suggest => crate::i18n::t("mining.auto_learn.suggest"),
+            Self::Auto => crate::i18n::t("mining.auto_learn.auto"),
         }
     }
 }
@@ -98,12 +98,12 @@ impl CandidateSource {
     #[allow(dead_code)]
     pub fn label(self) -> &'static str {
         match self {
-            Self::Llm => "AI 提取",
-            Self::Edit => "我的修正",
-            Self::Preset => "预设",
-            Self::Diff => "原文差异",
-            Self::Freq => "词频",
-            Self::Manual => "手动",
+            Self::Llm => crate::i18n::t("mining.source.llm"),
+            Self::Edit => crate::i18n::t("mining.source.edit"),
+            Self::Preset => crate::i18n::t("mining.source.preset"),
+            Self::Diff => crate::i18n::t("mining.source.diff"),
+            Self::Freq => crate::i18n::t("mining.source.freq"),
+            Self::Manual => crate::i18n::t("mining.source.manual"),
         }
     }
 }
@@ -152,15 +152,15 @@ impl TermKind {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Product => "产品",
-            Self::Person => "人名",
-            Self::Company => "公司",
-            Self::Project => "项目",
-            Self::Tech => "技术",
-            Self::Acronym => "缩写",
-            Self::File => "文件",
-            Self::Jargon => "术语",
-            Self::Unknown => "词条",
+            Self::Product => crate::i18n::t("mining.kind.product"),
+            Self::Person => crate::i18n::t("mining.kind.person"),
+            Self::Company => crate::i18n::t("mining.kind.company"),
+            Self::Project => crate::i18n::t("mining.kind.project"),
+            Self::Tech => crate::i18n::t("mining.kind.tech"),
+            Self::Acronym => crate::i18n::t("mining.kind.acronym"),
+            Self::File => crate::i18n::t("mining.kind.file"),
+            Self::Jargon => crate::i18n::t("mining.kind.jargon"),
+            Self::Unknown => crate::i18n::t("mining.kind.unknown"),
         }
     }
 }

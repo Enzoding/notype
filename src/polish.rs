@@ -29,31 +29,29 @@ impl PolishMode {
     #[allow(dead_code)]
     pub fn label(self) -> &'static str {
         match self {
-            PolishMode::Prose => "流畅正文",
-            PolishMode::Literal => "代码与终端",
-            PolishMode::Email => "商务邮件",
-            PolishMode::Chat => "即时通讯",
+            PolishMode::Prose => crate::i18n::t("polish.mode_full.prose"),
+            PolishMode::Literal => crate::i18n::t("polish.mode_full.literal"),
+            PolishMode::Email => crate::i18n::t("polish.mode_full.email"),
+            PolishMode::Chat => crate::i18n::t("polish.mode_full.chat"),
         }
     }
 
     pub fn short_label(self) -> &'static str {
         match self {
-            PolishMode::Prose => "正文",
-            PolishMode::Literal => "代码",
-            PolishMode::Email => "邮件",
-            PolishMode::Chat => "聊天",
+            PolishMode::Prose => crate::i18n::t("polish.mode.prose"),
+            PolishMode::Literal => crate::i18n::t("polish.mode.literal"),
+            PolishMode::Email => crate::i18n::t("polish.mode.email"),
+            PolishMode::Chat => crate::i18n::t("polish.mode.chat"),
         }
     }
 
     #[allow(dead_code)]
     pub fn description(self) -> &'static str {
         match self {
-            PolishMode::Prose => "去除口癖与重复，按语意分段或分点，适合文档、笔记与通用写作。",
-            PolishMode::Literal => "精准保留代码标识符、命令与路径，只清理语气词并补全标点。",
-            PolishMode::Email => "整理为可直接发送的得体邮件正文，行动项自动归纳为清晰列表。",
-            PolishMode::Chat => {
-                "保持自然口吻与简短句式，一两句话直达重点，适合微信、Slack 与飞书。"
-            }
+            PolishMode::Prose => crate::i18n::t("polish.desc.prose"),
+            PolishMode::Literal => crate::i18n::t("polish.desc.literal"),
+            PolishMode::Email => crate::i18n::t("polish.desc.email"),
+            PolishMode::Chat => crate::i18n::t("polish.desc.chat"),
         }
     }
 }
@@ -89,10 +87,22 @@ pub fn resolve_mode(strategy: &str, bundle_id: &str) -> Option<PolishMode> {
 pub fn friendly_app_name(bundle_id: &str) -> String {
     let b = bundle_id.trim();
     if b.is_empty() || b == "unknown" {
-        return "当前应用".into();
+        return crate::i18n::t("polish.current_app").to_string();
     }
     if b == "notype.studio" || b == "opentypeless.studio" {
-        return "演练台".into();
+        return crate::i18n::t("polish.studio").to_string();
+    }
+    if b == "com.apple.Terminal" {
+        return crate::i18n::t("app.terminal").to_string();
+    }
+    if b == "com.apple.mail" {
+        return crate::i18n::t("app.mail").to_string();
+    }
+    if b == "com.apple.MobileSMS" {
+        return crate::i18n::t("app.messages").to_string();
+    }
+    if b == "com.apple.Notes" {
+        return crate::i18n::t("app.notes").to_string();
     }
     const KNOWN: &[(&str, &str)] = &[
         ("com.apple.dt.Xcode", "Xcode"),
@@ -100,23 +110,19 @@ pub fn friendly_app_name(bundle_id: &str) -> String {
         ("com.todesktop.230313mzl4w4u92", "Cursor"),
         ("com.todesktop.", "Cursor"),
         ("dev.zed.Zed", "Zed"),
-        ("com.apple.Terminal", "终端"),
         ("com.googlecode.iterm2", "iTerm2"),
         ("dev.warp.Warp", "Warp"),
         ("com.mitchellh.ghostty", "Ghostty"),
-        ("com.apple.mail", "邮件"),
         ("com.microsoft.Outlook", "Outlook"),
         ("com.readdle.smartemail-Mac", "Spark"),
         ("com.mimestream.Mimestream", "Mimestream"),
         ("com.tinyspeck.slackmacgap", "Slack"),
         ("com.tencent.xinWeChat", "微信"),
         ("net.whatsapp.WhatsApp", "WhatsApp"),
-        ("com.apple.MobileSMS", "信息"),
         ("ru.keepcoder.Telegram", "Telegram"),
         ("com.hnc.Discord", "Discord"),
         ("com.electron.lark", "飞书"),
         ("com.alibaba.DingTalkMac", "钉钉"),
-        ("com.apple.Notes", "备忘录"),
         ("notion.id", "Notion"),
         ("md.obsidian", "Obsidian"),
         ("com.apple.Safari", "Safari"),
