@@ -169,9 +169,9 @@ pub fn mode_for_bundle(bundle_id: &str) -> PolishMode {
     ];
     if LITERAL_PREFIXES.iter().any(|id| bundle_id.starts_with(id)) {
         PolishMode::Literal
-    } else if EMAIL.iter().any(|id| bundle_id == *id) {
+    } else if EMAIL.contains(&bundle_id) {
         PolishMode::Email
-    } else if CHAT.iter().any(|id| bundle_id == *id) {
+    } else if CHAT.contains(&bundle_id) {
         PolishMode::Chat
     } else {
         PolishMode::Prose

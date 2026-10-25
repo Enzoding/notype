@@ -4,6 +4,7 @@ mod capture;
 mod front;
 mod gateway;
 mod hotkey;
+mod i18n;
 mod keychain;
 mod mining;
 mod overlay;
@@ -31,7 +32,7 @@ fn main() {
     application().with_assets(assets::AllAssets).run(|cx| {
         init(cx);
 
-        let session = cx.new(|cx| Session::new(cx));
+        let session = cx.new(Session::new);
         let (show_dock, initial_code, initial_mode) = {
             let s = session.read(cx);
             (s.show_dock, s.hotkey_code, s.trigger_mode)
@@ -280,10 +281,10 @@ fn install_tray() -> Option<tray_icon::TrayIcon> {
     use tray_icon::menu::{Menu, MenuItem};
     use tray_icon::TrayIconBuilder;
     let menu = Menu::new();
-    let show = MenuItem::with_id("show", "打开工作台", true, None);
-    let toggle = MenuItem::with_id("toggle", "开始或停止口述", true, None);
-    let dock = MenuItem::with_id("dock", "切换 Dock 图标", true, None);
-    let quit = MenuItem::with_id("quit", "退出 Notype", true, None);
+    let show = MenuItem::with_id("show", i18n::t("tray.show"), true, None);
+    let toggle = MenuItem::with_id("toggle", i18n::t("tray.toggle"), true, None);
+    let dock = MenuItem::with_id("dock", i18n::t("tray.dock"), true, None);
+    let quit = MenuItem::with_id("quit", i18n::t("tray.quit"), true, None);
     menu.append(&show).ok()?;
     menu.append(&toggle).ok()?;
     menu.append(&dock).ok()?;

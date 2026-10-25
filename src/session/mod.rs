@@ -38,6 +38,7 @@ pub struct Session {
     pub wave: [f32; crate::capture::WAVE_BARS],
     pub working_progress: f32,
     pub show_dock: bool,
+    pub ui_language: crate::i18n::Preference,
     pub hotkey_code: i64,
     pub trigger_mode: TriggerMode,
     pub polish_strategy: String,
@@ -101,6 +102,8 @@ impl Session {
         let audio_ids = Store::existing_audio_ids();
         let stats = store.stats();
         let show_dock = store.show_dock();
+        let ui_language = store.ui_language();
+        crate::i18n::apply(ui_language);
         let hotkey_code = store.hotkey_code();
         let trigger_mode = store.trigger_mode();
         let polish_strategy = store.polish_strategy();
@@ -167,6 +170,7 @@ impl Session {
             wave: [0.0; crate::capture::WAVE_BARS],
             working_progress: 0.0,
             show_dock,
+            ui_language,
             hotkey_code,
             trigger_mode,
             polish_strategy,

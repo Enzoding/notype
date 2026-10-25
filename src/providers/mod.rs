@@ -2,6 +2,8 @@
 mod catalog;
 mod chat;
 mod endpoint;
+#[cfg(test)]
+mod live;
 mod profile;
 mod readiness;
 mod transcription;

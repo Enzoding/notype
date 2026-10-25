@@ -487,7 +487,7 @@ pub fn learn_from_edit(
         && is_term_like(old_clean)
         && is_term_like(new_clean)
         && contains_term(reference, old_clean)
-        && key(&old_clean) != key(&new_clean)
+        && key(old_clean) != key(new_clean)
     {
         learning.corrections.push(CorrectionDraft {
             wrong: old_clean.to_string(),
@@ -679,7 +679,7 @@ pub fn apply_corrections(text: &str, rules: &[CorrectionRule]) -> String {
         return text.to_string();
     }
     let mut ordered = rules.to_vec();
-    ordered.sort_by(|a, b| b.wrong.chars().count().cmp(&a.wrong.chars().count()));
+    ordered.sort_by_key(|rule| std::cmp::Reverse(rule.wrong.chars().count()));
     let mut out = text.to_string();
     for rule in ordered {
         if rule.wrong.trim().is_empty() || rule.wrong == rule.right {
@@ -743,20 +743,13 @@ pub fn is_term_like(term: &str) -> bool {
     if term.contains('，') && len > 12 {
         return false;
     }
-    if is_all_cjk(&term) {
-        if len > 8
-            || term.ends_with('的')
-            || term.ends_with('了')
-            || term.ends_with('吗')
-            || term.ends_with('吧')
-            || term.ends_with('呢')
-            || term.ends_with('啊')
-            || term.ends_with('呀')
-            || term.ends_with('哦')
-            || term.ends_with('嗯')
-        {
-            return false;
-        }
+    if is_all_cjk(&term)
+        && (len > 8
+            || ['的', '了', '吗', '吧', '呢', '啊', '呀', '哦', '嗯']
+                .iter()
+                .any(|&c| term.ends_with(c)))
+    {
+        return false;
     }
     if term.chars().filter(|c| c.is_alphabetic()).count() == 0 {
         return false;

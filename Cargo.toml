@@ -1,8 +1,8 @@
 [package]
 name = "notype"
-version = "0.2.1"
+version = "0.2.4"
 edition = "2021"
-description = "Local macOS dictation. Record, then transcribe and polish through Vercel AI Gateway."
+description = "Local macOS dictation. Record, then transcribe and polish through Vercel AI Gateway or OpenRouter."
 publish = false
 
 [[bin]]

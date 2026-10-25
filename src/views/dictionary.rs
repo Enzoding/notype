@@ -15,7 +15,7 @@ use crate::mining::{AutoLearnMode, PRESET_PHRASES};
 use crate::paste;
 use crate::session::format_relative_time;
 use crate::ui;
-use crate::views::components::{button, empty_state, icon_button, phrase_row};
+use crate::views::components::{button, empty_state, icon_button, phrase_row, PhraseRowColors};
 use crate::views::SettingsView;
 
 impl SettingsView {
@@ -303,9 +303,11 @@ impl SettingsView {
                             .children({
                                 let count = displayed_phrases.len();
                                 let session = session_handle.clone();
-                                let hairline = ui::hairline(cx);
-                                let hover = ui::card_hover(cx);
-                                let dim = ui::fg2(cx);
+                                let colors = PhraseRowColors {
+                                    hairline: ui::hairline(cx),
+                                    hover: ui::card_hover(cx),
+                                    dim: ui::fg2(cx),
+                                };
                                 displayed_phrases.into_iter().enumerate().map(move |(index, phrase)| {
                                     phrase_row(
                                         phrase.id,
@@ -314,9 +316,7 @@ impl SettingsView {
                                         phrase.hits,
                                         !has_more && index + 1 == count,
                                         session.clone(),
-                                        hairline,
-                                        hover,
-                                        dim,
+                                        colors,
                                     )
                                 })
                             })

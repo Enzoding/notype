@@ -136,7 +136,7 @@ impl SettingsView {
 
         let total_count = filtered.len();
         let page_size = self.history_page_size.max(1);
-        let total_pages = ((total_count + page_size - 1) / page_size).max(1);
+        let total_pages = total_count.div_ceil(page_size).max(1);
         let current_page = self.history_page.clamp(1, total_pages);
         if self.history_page != current_page {
             self.history_page = current_page;

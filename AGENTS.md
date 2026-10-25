@@ -9,6 +9,7 @@ Notype is a Rust 2021 macOS dictation application using GPUI Kit. All applicatio
 - `capture.rs`, `audio.rs`, `hotkey.rs`, `paste.rs`, `ax.rs`, and `front.rs`: audio, accessibility, clipboard, and frontmost application sensing.
 - `providers/`: channel profiles, endpoint validation, model catalogs, HTTP retry/cancellation, and Vercel/OpenRouter transcription and chat protocols. One active channel owns transcription, polishing, and glossary calls; endpoint URLs are fixed by channel and are not editable. `gateway.rs` is a compatibility facade.
 - `tasks/`: serializable recording jobs, raw-audio journal/checkpoints, recovery repository, and resumable transcription/polishing. Keep GPUI out of this feature.
+- `i18n/`: interface language preference, macOS language detection, and embedded `locales/*.json` catalogs (`en`, `zh-Hans`). New user-visible copy must add the key to both catalogs and be read through `i18n::t`; never persist or branch on translated text.
 - `polish.rs` and `mining.rs`: writing modes and terminology learning.
 - `permissions.rs`: native macOS microphone authorization queries and prompts; cache permission results outside rendering.
 - `store.rs`: SQLite history/settings persistence and idempotent task-to-history mapping. `secrets.rs` and `keychain.rs`: verified legacy credential migration and native macOS Keychain access.

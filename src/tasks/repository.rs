@@ -306,6 +306,54 @@ pub(super) mod tests {
         assert_eq!(bytes, 19_200_000);
         task.remove().unwrap();
     }
+    /// Baseline for a realistic device format (48 kHz stereo). Run with:
+    /// `cargo test --release --locked baseline_ten_minutes -- --ignored --nocapture`
+    #[test]
+    #[ignore = "benchmark; prints timings and peak memory"]
+    fn baseline_ten_minutes_of_48khz_stereo() {
+        fn rss_mb() -> f64 {
+            let out = std::process::Command::new("ps")
+                .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout)
+                .trim()
+                .parse::<f64>()
+                .unwrap_or(0.0)
+                / 1024.0
+        }
+        let mut task = fixture();
+        task.channels = 2;
+        task.sample_rate = 48_000;
+        let before = rss_mb();
+        let started = std::time::Instant::now();
+        let writer = AudioWriter::start(&task).unwrap();
+        let sender = writer.sender();
+        let block = vec![0.1_f32; 48_000 * 2 / 10]; // 100 ms callback-sized blocks
+        for _ in 0..6000 {
+            sender.send(block.clone()).unwrap();
+        }
+        drop(sender);
+        let task = writer.finish(task).finish().unwrap();
+        let write_secs = started.elapsed().as_secs_f64();
+        let after_write = rss_mb();
+        let chunks = task.chunk_count().unwrap();
+        let mut worst = 0.0_f64;
+        let mut wav_bytes = 0;
+        for index in 0..chunks {
+            let t = std::time::Instant::now();
+            wav_bytes += task.chunk_wav(index).unwrap().len();
+            worst = worst.max(t.elapsed().as_secs_f64());
+        }
+        let raw_mb = task.available_bytes().unwrap() as f64 / 1_048_576.0;
+        println!(
+            "chunks={chunks} raw_disk_mb={raw_mb:.1} wav_total_mb={:.1} write_secs={write_secs:.2} \
+             worst_chunk_encode_secs={worst:.3} rss_before_mb={before:.0} rss_after_write_mb={after_write:.0} rss_after_encode_mb={:.0}",
+            wav_bytes as f64 / 1_048_576.0,
+            rss_mb()
+        );
+        task.remove().unwrap();
+    }
     #[test]
     fn corrupt_checkpoint_and_empty_audio_are_recoverable_errors() {
         let task = fixture();

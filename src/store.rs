@@ -270,6 +270,14 @@ impl Store {
         self.set_setting("trigger_mode", mode.as_str())
     }
 
+    pub fn ui_language(&self) -> crate::i18n::Preference {
+        crate::i18n::Preference::from_setting(self.setting("ui_language").as_deref())
+    }
+
+    pub fn set_ui_language(&self, preference: crate::i18n::Preference) -> Result<()> {
+        self.set_setting("ui_language", preference.as_str())
+    }
+
     pub fn polish_strategy(&self) -> String {
         self.setting("polish_strategy")
             .unwrap_or_else(|| "auto".to_string())
@@ -555,7 +563,7 @@ impl Store {
 
     pub fn add_phrases_batch(&self, text: &str) -> Result<usize> {
         let mut added = 0usize;
-        for token in text.split(|c| c == '\n' || c == ',' || c == '，' || c == ';' || c == '；') {
+        for token in text.split(['\n', ',', '，', ';', '；']) {
             let Some(term) = normalize_term(token) else {
                 continue;
             };
@@ -1045,6 +1053,13 @@ impl Store {
     }
 }
 
+fn now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1185,11 +1200,4 @@ mod tests {
         assert!(dir.ends_with("audio"));
         let _ = Store::existing_audio_ids();
     }
-}
-
-fn now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
 }

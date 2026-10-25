@@ -153,4 +153,74 @@ mod tests {
             "Notype"
         );
     }
+    /// Pins the Vercel AI Gateway transcription wire contract (headers + JSON
+    /// body) so protocol drift is caught without a paid request.
+    #[test]
+    fn vercel_request_sends_protocol_headers_and_body_on_the_wire() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                .unwrap();
+            let mut data = Vec::new();
+            let mut buf = [0; 4096];
+            while let Ok(n) = stream.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                data.extend_from_slice(&buf[..n]);
+                let text = String::from_utf8_lossy(&data);
+                if let Some((head, body)) = text.split_once("\r\n\r\n") {
+                    let length = head
+                        .lines()
+                        .find_map(|l| {
+                            l.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|v| v.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap_or(0);
+                    if body.len() >= length {
+                        break;
+                    }
+                }
+            }
+            let body = r#"{"text":"ok"}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+            String::from_utf8(data).unwrap()
+        });
+        let client = reqwest::blocking::Client::new();
+        let body = transcribe_body(&[1, 2, 3], Some(&["Notype".into()]));
+        let response = send_transcribe(
+            &client,
+            &format!("http://{address}/v4/ai/transcription-model"),
+            "test-key",
+            "model/x",
+            body,
+        )
+        .unwrap();
+        assert_eq!(transcript_text(&response.text().unwrap()).unwrap(), "ok");
+        let request = server.join().unwrap();
+        let lower = request.to_ascii_lowercase();
+        assert!(request.starts_with("POST /v4/ai/transcription-model "));
+        assert!(lower.contains("authorization: bearer test-key"));
+        assert!(lower.contains("ai-gateway-protocol-version: 0.0.1"));
+        assert!(lower.contains("ai-transcription-model-specification-version: 4"));
+        assert!(lower.contains("ai-model-id: model/x"));
+        let json: serde_json::Value =
+            serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert_eq!(json["audio"], "AQID");
+        assert_eq!(json["mediaType"], "audio/wav");
+        assert_eq!(
+            json["providerOptions"]["azure"]["phraseList"]["phrases"][0],
+            "Notype"
+        );
+    }
 }

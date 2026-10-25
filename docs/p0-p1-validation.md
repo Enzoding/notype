@@ -44,3 +44,31 @@
 - 麦克风权限读取使用 [Apple AVFoundation 授权状态 API](https://developer.apple.com/documentation/avfoundation/avcapturedevice/authorizationstatus(for:))；查询不会请求权限或开始录音，授权入口由用户主动点击。
 
 最终预览已确认：首页当前状态模块只有 API Key 和所需权限两行，未授权的麦克风、辅助功能分别在权限行说明；不展示模型、地址、连接测试或设备检测状态。未代替用户批准真实授权请求。
+
+## 0.2.2 收尾验证（合成数据，不含真机）
+
+- `cargo fmt --check`、`cargo clippy --all-targets --locked`（零警告）、`cargo test --locked`（61 项）通过；新增项为 Vercel 请求线上契约测试。该测试只固定当前客户端发出的请求形态，不证明 Vercel 服务端仍接受它，仍需真实 Key 的调用确认。
+- 十分钟 48 kHz 立体声合成基线（release、一次运行、恒定样本，仅反映本机该次结果）：写盘约 0.38 秒；20 个分片，单片编码最慢约 5 毫秒；进程常驻内存约 10 → 17（写盘后）→ 44 MB（全部分片编码后）；`audio.raw` 约 219.7 MB，编码后 WAV 合计约 18.3 MB。
+- 观察：原始日志按设备格式保存，十分钟约占 220 MB 磁盘，失败草稿保留七天时需要关注磁盘占用；磁盘满时的行为仍需真机验证。
+- 该基线不含真实麦克风回调、UI 帧停顿、网络上传和停止到出字时间，这些仍未测量。
+
+### 仍需真机/凭据完成的验收（本轮未做）
+
+1. record → transcribe → polish → paste，含取消与润色失败回退。
+2. 拔麦、休眠、磁盘满、强退后恢复。
+3. OpenRouter 真实 Key 的转写、润色、术语提取（Vercel 见下，OpenRouter 暂无 Key）。
+4. 生产数据目录副本上的 Keychain 迁移（先备份）。
+5. 30 秒硬切片接缝质量与 UI 帧停顿评估。
+
+
+## 0.2.4 Vercel 真实渠道冒烟（合成语音）
+
+用 `say` 生成的英文、中文各一段（16 kHz 单声道 WAV，约 7 与 9 秒），通过 `providers::live` 对真实 Vercel AI Gateway 运行，Key 取自本机 `.env.local`（已被 git 忽略，未写入任何文件或日志）。共约 8 次小额请求。
+
+- 聊天连接成功（约 1.1 秒），模型目录返回 330 项。
+- 默认转写模型 `microsoft/mai-transcribe-2` 成功转写两段；英文去除了开头的 “Um”，中文保留了“嗯，那个”等口癖（由润色阶段去除），其余内容完整，“Notype” 术语两段均识别正确（带热词）。
+- 默认润色模型 `deepseek/deepseek-v4.1-flash` 成功去除口癖并保持原语言；中文润色在中英文之间补了空格，符合 `space_cjk`。
+- 术语提取返回合法 JSON。
+- 结论：当前 Vercel 协议头、请求体与响应解析与真实服务一致。样本为合成语音，不代表真人录音的识别质量、延迟和长录音（分片）表现。
+- 未验证：OpenRouter（无 Key）；`ai-gateway` 对 10 分钟/多分片的真实表现；真机端到端流程。
+\n

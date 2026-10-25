@@ -108,6 +108,14 @@ pub fn candidate_row(
         )
 }
 
+/// Theme colors shared by every phrase row, resolved once per list render.
+#[derive(Clone, Copy)]
+pub struct PhraseRowColors {
+    pub hairline: Hsla,
+    pub hover: Hsla,
+    pub dim: Hsla,
+}
+
 pub fn phrase_row(
     id: i64,
     label: String,
@@ -115,10 +123,13 @@ pub fn phrase_row(
     hits: i64,
     last: bool,
     session: Entity<Session>,
-    hairline: Hsla,
-    hover: Hsla,
-    dim: Hsla,
+    colors: PhraseRowColors,
 ) -> impl IntoElement {
+    let PhraseRowColors {
+        hairline,
+        hover,
+        dim,
+    } = colors;
     let accessible = format!("删除 {label}");
     let group_id = SharedString::from(format!("phrase-row-{id}"));
     div()

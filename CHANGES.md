@@ -4,6 +4,32 @@
 
 ---
 
+## [0.2.4] - 2026-10-25
+
+### 工程治理与文档 (Engineering & Documentation)
+- 新增 `providers::live` 手动冒烟测试（`#[ignore]`）：用环境变量传入 Key 和合成语音，对真实 Vercel AI Gateway 验证聊天连接、模型目录、转写、润色与术语提取；不打印 Key，默认不运行。
+
+## [0.2.3] - 2026-10-25
+
+### 新增功能 (Features)
+- 多语言基础设施（计划 I0）：新增 `i18n` 模块、`ui_language` 设置（跟随系统 / 简体中文 / English，默认跟随系统）和中英文词条文件；启动时按 macOS 首选语言解析，中文系统保持原有界面，英文系统使用英文，繁体或其它语言回退英文。
+- 状态栏菜单已使用词条，是首个本地化界面；其余界面按计划分步迁移。
+
+### 工程治理与文档 (Engineering & Documentation)
+- 新增语言解析、回退、词条键与占位符一致性、源码引用键与词条互相覆盖的测试；系统语言读取只在启动或切换偏好时执行。
+- 语言选择器和运行中刷新尚未接入界面（`Session::set_ui_language` 已就绪）。
+
+## [0.2.2] - 2026-10-25
+
+### 缺陷修复 (Fixes)
+- 清理全部 Clippy 警告（挖掘、润色、存储、历史分页、词典行组件、启动入口），行为不变；词典行的三个主题色合并为 `PhraseRowColors`。
+- 包描述更新为 Vercel AI Gateway 或 OpenRouter。
+
+### 工程治理与文档 (Engineering & Documentation)
+- 新增 Vercel 转写请求线上契约测试：用本地 socket 校验协议头（`ai-gateway-protocol-version`、模型规格版本、模型 ID、Bearer）与 JSON 请求体，不产生真实请求。
+- 新增 `#[ignore]` 基线测试 `baseline_ten_minutes_of_48khz_stereo`，度量十分钟 48 kHz 立体声的写盘、分片编码与内存。
+- 迭代方案补充登录方式决定（邮箱验证码 + Resend，GitHub/Google 后续）与多语言（English / 简体中文）方案；`docs/p0-p1-validation.md` 追加 0.2.2 验证记录。
+
 ## [0.2.1] - 2026-10-25
 
 ### 新增功能 (Features)

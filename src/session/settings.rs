@@ -38,6 +38,19 @@ impl Session {
         cx.notify();
     }
 
+    /// Persist the interface language preference and switch to it immediately.
+    /// Views reading `i18n::t` repaint on `notify`; surfaces outside GPUI
+    /// (tray menu) are refreshed by their owners once they are localized.
+    #[allow(dead_code)] // wired to the language selector in the settings UI step
+    pub fn set_ui_language(&mut self, preference: crate::i18n::Preference, cx: &mut Context<Self>) {
+        if let Ok(store) = self.store.lock() {
+            let _ = store.set_ui_language(preference);
+        }
+        self.ui_language = preference;
+        crate::i18n::apply(preference);
+        cx.notify();
+    }
+
     pub fn set_hotkey_code(&mut self, code: i64, cx: &mut Context<Self>) {
         self.hotkey_code = code;
         hotkey::set_hotkey_code(code);
