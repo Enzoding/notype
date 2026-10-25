@@ -15,6 +15,7 @@ impl Session {
         if self.repolishing_id.is_some() || self.key.is_empty() {
             return;
         }
+        let base_url = self.api_base_url.clone();
         let key = self.key.clone();
         let model = self.polish_model.clone();
         let phrases = self
@@ -40,7 +41,14 @@ impl Session {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    gateway::polish_with_options(&key, &transcript, &phrases, &options, &model)
+                    gateway::polish_with_options(
+                        &base_url,
+                        &key,
+                        &transcript,
+                        &phrases,
+                        &options,
+                        &model,
+                    )
                 })
                 .await;
             let _ = this.update(cx, |session, cx| {

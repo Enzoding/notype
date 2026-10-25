@@ -39,6 +39,7 @@ pub struct Session {
     pub save_audio: bool,
     pub mic_device: String,
     pub available_mics: Vec<String>,
+    pub api_base_url: String,
     pub transcribe_model: String,
     pub polish_model: String,
     pub key_status: String,
@@ -104,6 +105,7 @@ impl Session {
         let sound_feedback = store.sound_feedback();
         let save_audio = store.save_audio();
         let mic_device = store.mic_device();
+        let api_base_url = store.api_base_url();
         let transcribe_model = store.transcribe_model();
         let polish_model = store.polish_model();
         let available_mics = crate::capture::list_input_devices();
@@ -123,6 +125,7 @@ impl Session {
             save_audio,
             mic_device,
             available_mics,
+            api_base_url,
             transcribe_model,
             polish_model,
             key_status: settings::key_status(&key, &source),

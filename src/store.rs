@@ -310,6 +310,32 @@ impl Store {
         self.set_setting("mic_device", name)
     }
 
+    pub fn api_key(&self) -> String {
+        self.setting("api_key").unwrap_or_default()
+    }
+
+    pub fn set_api_key(&self, key: &str) -> Result<()> {
+        self.set_setting("api_key", key.trim())
+    }
+
+    pub fn api_base_url(&self) -> String {
+        self.setting("api_base_url")
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| crate::gateway::DEFAULT_BASE_URL.to_string())
+    }
+
+    pub fn set_api_base_url(&self, url: &str) -> Result<()> {
+        self.set_setting("api_base_url", url.trim())
+    }
+
+    pub fn set_transcribe_model(&self, model: &str) -> Result<()> {
+        self.set_setting("transcribe_model", model.trim())
+    }
+
+    pub fn set_polish_model(&self, model: &str) -> Result<()> {
+        self.set_setting("polish_model", model.trim())
+    }
+
     pub fn transcribe_model(&self) -> String {
         self.setting("transcribe_model")
             .filter(|s| !s.trim().is_empty())

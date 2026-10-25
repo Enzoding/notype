@@ -28,6 +28,7 @@ enum Outcome {
 }
 
 fn run_pipeline(
+    base_url: &str,
     key: &str,
     wav: &[u8],
     phrases: &[String],
@@ -38,7 +39,7 @@ fn run_pipeline(
     stage: &(dyn Fn(Stage) + Send + Sync),
 ) -> Outcome {
     stage(Stage::Transcribe);
-    let transcript = match gateway::transcribe_with_model(key, wav, phrases, transcribe_model) {
+    let transcript = match gateway::transcribe_with_model(base_url, key, wav, phrases, transcribe_model) {
         Ok(text) => text,
         Err(err) => return Outcome::Failed(err),
     };
@@ -49,7 +50,7 @@ fn run_pipeline(
     let (paste_text, archive_polished, polish_failed) = match polish_opts {
         Some(opts) => {
             stage(Stage::Polish);
-            match gateway::polish_with_options(key, &corrected, phrases, opts, polish_model) {
+            match gateway::polish_with_options(base_url, key, &corrected, phrases, opts, polish_model) {
                 Ok(text) => (text.clone(), text, false),
                 Err(_) => (corrected.clone(), String::new(), true),
             }
@@ -132,7 +133,7 @@ impl Session {
     pub(super) fn begin(&mut self, for_studio: bool, cx: &mut Context<Self>) {
         if self.key.is_empty() {
             self.note(
-                Notice::Error("请先在偏好设置中保存 AI Gateway Key".into()),
+                Notice::Error("请先在设置中填写并保存 API Key".into()),
                 cx,
             );
             return;
@@ -224,6 +225,7 @@ impl Session {
             .lock()
             .map(|store| store.corrections())
             .unwrap_or_default();
+        let base_url = self.api_base_url.clone();
         let key = self.key.clone();
         let transcribe_model = self.transcribe_model.clone();
         let polish_model = self.polish_model.clone();
@@ -264,6 +266,7 @@ impl Session {
                         let _ = sender.send(stage);
                     };
                     run_pipeline(
+                        &base_url,
                         &key,
                         &wav_for_task,
                         &phrases,

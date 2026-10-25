@@ -191,6 +191,7 @@ impl Session {
             .map(|item| item.id)
             .max()
             .unwrap_or(cursor_hint);
+        let base_url = self.api_base_url.clone();
         let key = self.key.clone();
         let model = self.polish_model.clone();
         let mode = self.auto_learn_mode;
@@ -201,7 +202,7 @@ impl Session {
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { gateway::extract_glossary(&key, &model, &prompt) })
+                .spawn(async move { gateway::extract_glossary(&base_url, &key, &model, &prompt) })
                 .await;
             let outcome = match result {
                 Ok(raw) => Ok(mining::parse_glossary(&raw, &mining_rows, &existing)),

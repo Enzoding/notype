@@ -10,14 +10,11 @@ use crate::store::TriggerMode;
 
 use super::Session;
 
-pub(super) fn key_status(key: &str, source: &KeySource) -> String {
-    if key.is_empty() {
-        return "还没有 API Key。".into();
+pub(super) fn key_status(key: &str, _source: &KeySource) -> String {
+    if key.trim().is_empty() {
+        return "未配置 API Key".into();
     }
-    match source {
-        KeySource::File(_) => "已从 .env.local 读取。".into(),
-        KeySource::Missing => "还没有 API Key。".into(),
-    }
+    "API Key 已配置".into()
 }
 
 impl Session {
@@ -151,10 +148,50 @@ impl Session {
         cx.notify();
     }
 
+    pub fn set_api_base_url(&mut self, url: &str, cx: &mut Context<Self>) {
+        let url = url.trim();
+        self.api_base_url = if url.is_empty() {
+            gateway::DEFAULT_BASE_URL.to_string()
+        } else {
+            url.to_string()
+        };
+        if let Ok(store) = self.store.lock() {
+            let _ = store.set_api_base_url(&self.api_base_url);
+        }
+        cx.notify();
+    }
+
+    pub fn set_transcribe_model(&mut self, model: &str, cx: &mut Context<Self>) {
+        let model = model.trim();
+        self.transcribe_model = if model.is_empty() {
+            gateway::TRANSCRIBE_MODEL.to_string()
+        } else {
+            model.to_string()
+        };
+        if let Ok(store) = self.store.lock() {
+            let _ = store.set_transcribe_model(&self.transcribe_model);
+        }
+        cx.notify();
+    }
+
+    pub fn set_polish_model(&mut self, model: &str, cx: &mut Context<Self>) {
+        let model = model.trim();
+        self.polish_model = if model.is_empty() {
+            gateway::POLISH_MODEL.to_string()
+        } else {
+            model.to_string()
+        };
+        if let Ok(store) = self.store.lock() {
+            let _ = store.set_polish_model(&self.polish_model);
+        }
+        cx.notify();
+    }
+
     pub fn test_gateway(&mut self, cx: &mut Context<Self>) {
         if self.gateway_testing {
             return;
         }
+        let base_url = self.api_base_url.clone();
         let key = self.key.clone();
         let model = self.polish_model.clone();
         self.gateway_testing = true;
@@ -163,7 +200,7 @@ impl Session {
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_executor()
-                .spawn(async move { gateway::test_connection(&key, &model) })
+                .spawn(async move { gateway::test_connection(&base_url, &key, &model) })
                 .await;
             let _ = this.update(cx, |session, cx| {
                 session.gateway_testing = false;
@@ -177,6 +214,7 @@ impl Session {
         .detach();
     }
 
+    #[allow(dead_code)]
     pub fn reload_key(&mut self, cx: &mut Context<Self>) {
         let (key, source) = secrets::load_key();
         let _ = (TRANSCRIBE_MODEL, POLISH_MODEL);
@@ -195,10 +233,18 @@ impl Session {
         match secrets::save_key(value) {
             Ok(_) => {
                 self.key = value.to_string();
-                self.key_status = "已保存到 .env.local。".into();
+                self.key_status = "API Key 已配置".into();
             }
-            Err(err) => self.key_status = format!("无法保存。{err}"),
+            Err(err) => self.key_status = format!("无法保存：{err}"),
         }
+        cx.notify();
+    }
+
+    pub fn clear_key(&mut self, cx: &mut Context<Self>) {
+        secrets::clear_key();
+        self.key = String::new();
+        self.key_status = "未配置 API Key".into();
+        self.gateway_test_status = None;
         cx.notify();
     }
 }

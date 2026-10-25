@@ -64,6 +64,34 @@ Before implementing a feature, trace its state transitions and failure paths. Pr
 
 For behavioral fixes, add focused regression tests where practical. Cover empty input, malformed AI responses, failed requests, and persistence behavior as relevant. Run formatting, applicable tests, and Clippy before handing off; report failures and unverified system flows explicitly. Changes to dictation require a manual record → transcribe → polish → paste check, including cancellation and polish-failure fallback.
 
+## Version Management Guidelines
+
+- **SemVer Compliance**: Follow Semantic Versioning (`MAJOR.MINOR.PATCH`).
+- **Update Version on Every Change**: Every functional addition, UI adjustment, refactoring, or bug fix must bump the version in `Cargo.toml`.
+  - For small incremental changes, behavioral fixes, and UI tweaks: bump the `PATCH` version (e.g. `0.1.0` -> `0.1.1`).
+  - For backwards-compatible feature additions: bump the `MINOR` version (e.g. `0.1.0` -> `0.2.0`).
+- **Synchronized Packaging**: The macOS packaging script (`scripts/package.sh`) dynamically reads `Cargo.toml`'s version. Bumping `Cargo.toml` automatically reflects in the macOS bundle `Info.plist` (`CFBundleShortVersionString`, `CFBundleVersion`) and the output DMG name (`Notype-<version>.dmg`).
+
+## Documentation & Knowledge Base Guidelines
+
+Every AI agent and contributor working on this repository MUST uphold these two living documents:
+
+1. **`CHANGES.md` (Changelog)**:
+   - Must be updated after **every** code change or release.
+   - Record the version number, release date, and categorize items into:
+     - `新增功能 (Features)`
+     - `缺陷修复 (Fixes)`
+     - `工程治理与文档 (Engineering & Documentation)`
+   - Used for release notes, user audit, and git history tracking.
+
+2. **`LESSONS.md` (Failure Post-Mortem & Troubleshooting Knowledge Base)**:
+   - When encountering a difficult bug, network issue, platform quirk (macOS permissions, proxy, FFI, audio), or recurring developer mistake:
+   - **Immediately document it in `LESSONS.md`** under the structure:
+     - `问题现象` (Symptoms)
+     - `根本原因` (Root Cause)
+     - `防范与解决方案` (Prevention & Solution)
+   - Consult `LESSONS.md` before making architectural or platform changes to avoid repeating past mistakes.
+
 ## Operations & Ongoing Maintenance
 
 This is a local desktop application with an external AI dependency. Diagnose failures by stage: microphone capture, permissions/hotkey handling, Gateway transcription, polishing, insertion, or persistence. Keep diagnostics useful without logging API keys, audio, or dictated text. Verify model and API changes through connection testing and a short dictation before release.
@@ -78,4 +106,4 @@ Recent commits use prefixes such as `feat(dictionary):`, `feat(ui):`, and `refac
 
 ## Security & Configuration
 
-Copy `.env.example` to `.env.local` and set `AI_GATEWAY_API_KEY`; never commit keys or expose them in logs. Configuration resolves relative to the compile-time project directory. Local history and optional recordings live under `~/Library/Application Support/OpenTypeless/`. Audio and text are sent to AI Gateway for processing; avoid real user data in fixtures.
+Copy `.env.example` to `.env.local` and set `AI_GATEWAY_API_KEY`; never commit keys or expose them in logs. Configuration resolves relative to the compile-time project directory. Local history and optional recordings live under `~/Library/Application Support/Notype/` (with automatic backwards compatibility fallback for legacy `~/Library/Application Support/OpenTypeless/`). Audio and text are sent to AI Gateway for processing; avoid real user data in fixtures.

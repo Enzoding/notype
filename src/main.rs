@@ -100,8 +100,23 @@ fn open_settings(cx: &mut App, session: gpui_kit::Entity<Session>) -> AnyWindowH
     let (window, _) = open_window(settings_options(cx), cx, move |window, cx| {
         gpui_kit::component::Theme::change(window.appearance(), Some(window), cx);
         crate::ui::sync_controls(cx);
+        let initial_key = session.read(cx).key.clone();
         let key_input = cx.new(|cx| {
-            gpui_kit::component::input::InputState::new(window, cx).placeholder("vck_…")
+            let mut st = gpui_kit::component::input::InputState::new(window, cx)
+                .placeholder("请输入 API Key（例如 vck_... 或 sk-...）");
+            if !initial_key.is_empty() {
+                st.set_value(&initial_key, window, cx);
+            }
+            st
+        });
+        let initial_base_url = session.read(cx).api_base_url.clone();
+        let base_url_input = cx.new(|cx| {
+            let mut st = gpui_kit::component::input::InputState::new(window, cx)
+                .placeholder("https://ai-gateway.vercel.sh");
+            if !initial_base_url.is_empty() {
+                st.set_value(&initial_base_url, window, cx);
+            }
+            st
         });
         let phrase_input = cx.new(|cx| {
             gpui_kit::component::input::InputState::new(window, cx)
@@ -135,6 +150,7 @@ fn open_settings(cx: &mut App, session: gpui_kit::Entity<Session>) -> AnyWindowH
             SettingsView::new(
                 session.clone(),
                 key_input,
+                base_url_input,
                 phrase_input,
                 studio_input,
                 history_search_input,

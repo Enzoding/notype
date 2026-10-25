@@ -54,6 +54,7 @@ pub struct SettingsView {
     pub(crate) session: Entity<Session>,
     pub active_tab: NavTab,
     pub(crate) key_input: Entity<InputState>,
+    pub(crate) base_url_input: Entity<InputState>,
     pub(crate) phrase_input: Entity<InputState>,
     #[allow(dead_code)]
     pub(crate) studio_input: Entity<InputState>,
@@ -83,6 +84,7 @@ impl SettingsView {
     pub fn new(
         session: Entity<Session>,
         key_input: Entity<InputState>,
+        base_url_input: Entity<InputState>,
         phrase_input: Entity<InputState>,
         studio_input: Entity<InputState>,
         history_search_input: Entity<InputState>,
@@ -101,6 +103,15 @@ impl SettingsView {
                 if view.session.read(cx).has_key() {
                     view.key_editing = false;
                 }
+                cx.notify();
+            }
+        })
+        .detach();
+        cx.subscribe(&base_url_input, |view, input, event, cx| {
+            if matches!(event, InputEvent::PressEnter { .. }) {
+                let value = input.read(cx).value();
+                view.session
+                    .update(cx, |session, cx| session.set_api_base_url(value.as_ref(), cx));
                 cx.notify();
             }
         })
@@ -133,6 +144,7 @@ impl SettingsView {
             session,
             active_tab: NavTab::Overview,
             key_input,
+            base_url_input,
             phrase_input,
             studio_input,
             history_search_input,

@@ -17,10 +17,11 @@ impl Session {
             return;
         }
         if self.key.is_empty() {
-            self.studio_output = "先在偏好设置里保存 API Key。".into();
+            self.studio_output = "请先在设置中填写并保存 API Key。".into();
             cx.notify();
             return;
         }
+        let base_url = self.api_base_url.clone();
         let key = self.key.clone();
         let model = self.polish_model.clone();
         let phrases = self
@@ -43,7 +44,14 @@ impl Session {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    gateway::polish_with_options(&key, &input_text, &phrases, &options, &model)
+                    gateway::polish_with_options(
+                        &base_url,
+                        &key,
+                        &input_text,
+                        &phrases,
+                        &options,
+                        &model,
+                    )
                 })
                 .await;
             let _ = this.update(cx, |session, cx| {

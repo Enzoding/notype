@@ -9,13 +9,12 @@ use gpui_kit::{Context, FontWeight, IntoElement, ParentElement, Styled, div, px,
 
 use crate::hotkey::{self, HOTKEY_OPTIONS};
 use crate::mining::AutoLearnMode;
-use crate::secrets;
 use crate::store::{Store, TriggerMode};
 use crate::ui;
 use crate::views::SettingsView;
 use crate::views::components::{
-    button, choice_row, ellipsize, icon_button, inline_wave_view, key_row, mode_chip, path_row,
-    setting_row,
+    base_url_row, button, choice_row, connection_status_row, ellipsize, icon_button,
+    inline_wave_view, key_row, mode_chip, setting_row,
 };
 
 impl SettingsView {
@@ -23,15 +22,17 @@ impl SettingsView {
         let view = cx.entity();
         let session_handle = self.session.clone();
         let key_input = self.key_input.clone();
+        let base_url_input = self.base_url_input.clone();
         let custom_prompt_input = self.custom_prompt_input.clone();
-        let key_path = secrets::env_path().display().to_string();
         let data_dir = Store::data_dir()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|_| "~/Library/Application Support/Notype".into());
 
         let (
             has_key,
-            key_status,
+            key,
+            _api_base_url,
+            _key_status,
             gateway_test_status,
             gateway_testing,
             hotkey_code,
@@ -54,6 +55,8 @@ impl SettingsView {
             let s = self.session.read(cx);
             (
                 s.has_key(),
+                s.key.clone(),
+                s.api_base_url.clone(),
                 s.key_status.clone(),
                 s.gateway_test_status.clone(),
                 s.gateway_testing,
@@ -606,42 +609,110 @@ impl SettingsView {
                             ),
                     ),
             )
-            // 5. AI Gateway & Models Section
+            // 5. API Gateway & Connection Section
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(ui::section_label("连接", None).text_color(ui::fg2(cx)))
+                    .child(ui::section_label("API 连接与服务", None).text_color(ui::fg2(cx)))
                     .child(
                         ui::card(cx)
                             .child(key_row(
                                 key_editing,
                                 has_key,
-                                gateway_testing,
+                                &key,
                                 &key_input,
                                 &session_handle,
                                 &view,
                                 cx,
                             ))
-                            .child(path_row(
-                                &key_path,
-                                &key_status,
-                                gateway_test_status,
+                            .child(base_url_row(
+                                &base_url_input,
+                                &session_handle,
                                 cx,
                             ))
+                            .child(connection_status_row(
+                                gateway_testing,
+                                gateway_test_status,
+                                &session_handle,
+                                cx,
+                            )),
+                    ),
+            )
+            // 6. Models Section
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.0))
+                    .child(ui::section_label("AI 模型选择", None).text_color(ui::fg2(cx)))
+                    .child(
+                        ui::card(cx)
                             .child(
                                 setting_row(
-                                    "模型",
-                                    &format!("转写 {transcribe_model}，润色 {polish_model}"),
+                                    "语音转写模型",
+                                    "录音识别文字的模型（推荐使用 mai-transcribe-2 或 Whisper）。",
+                                    true,
+                                    cx,
+                                )
+                                .child(
+                                    choice_row().children(
+                                        [
+                                            ("microsoft/mai-transcribe-2", "mai-transcribe-2 (微软推荐)"),
+                                            ("openai/whisper-large-v3", "Whisper v3 (OpenAI)"),
+                                        ]
+                                        .into_iter()
+                                        .map(|(id, label)| {
+                                            let active = transcribe_model == id;
+                                            let s = session_handle.clone();
+                                            mode_chip(
+                                                format!("tm-model-{}", id.replace('/', "-")),
+                                                label,
+                                                active,
+                                                move |_, cx| {
+                                                    s.update(cx, |session, cx| {
+                                                        session.set_transcribe_model(id, cx);
+                                                    });
+                                                },
+                                                cx,
+                                            )
+                                        }),
+                                    ),
+                                ),
+                            )
+                            .child(
+                                setting_row(
+                                    "智能润色模型",
+                                    "去除口癖赘字、修正同音错字并保留表达风格的语言模型。",
                                     false,
                                     cx,
                                 )
-                                .child(ui::pill(
-                                    "AI Gateway v4",
-                                    ui::accent(cx),
-                                    ui::accent_soft(cx),
-                                )),
+                                .child(
+                                    choice_row().children(
+                                        [
+                                            ("deepseek/deepseek-v4.1-flash", "DeepSeek Flash (极速推荐)"),
+                                            ("openai/gpt-4o-mini", "GPT-4o Mini"),
+                                            ("anthropic/claude-3-5-haiku", "Claude 3.5 Haiku"),
+                                        ]
+                                        .into_iter()
+                                        .map(|(id, label)| {
+                                            let active = polish_model == id;
+                                            let s = session_handle.clone();
+                                            mode_chip(
+                                                format!("pm-model-{}", id.replace('/', "-")),
+                                                label,
+                                                active,
+                                                move |_, cx| {
+                                                    s.update(cx, |session, cx| {
+                                                        session.set_polish_model(id, cx);
+                                                    });
+                                                },
+                                                cx,
+                                            )
+                                        }),
+                                    ),
+                                ),
                             ),
                     ),
             )
