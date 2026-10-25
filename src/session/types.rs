@@ -16,6 +16,7 @@ impl Stage {
         }
     }
 
+    #[allow(dead_code)]
     pub fn short_label(self) -> &'static str {
         match self {
             Stage::Transcribe => "转写",

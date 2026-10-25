@@ -81,6 +81,7 @@ impl Session {
         cx.notify();
     }
 
+    #[allow(dead_code)]
     pub fn ignore_all_candidates(&mut self, cx: &mut Context<Self>) {
         if let Ok(store) = self.store.lock() {
             for item in store.pending_candidates().unwrap_or_default() {
@@ -91,6 +92,7 @@ impl Session {
         cx.notify();
     }
 
+    #[allow(dead_code)]
     pub fn accept_all_candidates(&mut self, cx: &mut Context<Self>) {
         if let Ok(store) = self.store.lock() {
             let _ = store.accept_all_pending();

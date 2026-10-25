@@ -6,6 +6,7 @@ const TARGET_RATE: u32 = 16_000;
 
 static ACTIVE_PLAYER: Mutex<Option<(i64, Child)>> = Mutex::new(None);
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub enum SoundCue {
     Start,
@@ -14,21 +15,8 @@ pub enum SoundCue {
     Error,
 }
 
-pub fn play_cue(cue: SoundCue) {
-    let (file, vol) = match cue {
-        SoundCue::Start => ("/System/Library/Sounds/Tink.aiff", "0.35"),
-        SoundCue::Stop => ("/System/Library/Sounds/Pop.aiff", "0.35"),
-        SoundCue::Done => ("/System/Library/Sounds/Glass.aiff", "0.30"),
-        SoundCue::Error => ("/System/Library/Sounds/Basso.aiff", "0.35"),
-    };
-    if Path::new(file).exists() {
-        let _ = Command::new("afplay")
-            .args(["-v", vol, file])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
-    }
+pub fn play_cue(_cue: SoundCue) {
+    // Sound effects disabled per user request.
 }
 
 pub fn play_wav(id: i64, path: &Path) -> Result<(), String> {

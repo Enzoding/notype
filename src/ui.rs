@@ -187,34 +187,42 @@ pub fn error(cx: &App) -> Hsla {
 }
 
 /// The floating HUD stays cream in both appearances, so it reads as the same object over the desktop.
+#[allow(dead_code)]
 pub fn hud_bg() -> Hsla {
     rgb(0xfffaf0).into()
 }
 
+#[allow(dead_code)]
 pub fn hud_live() -> Hsla {
     rgb(0xff4d8b).into()
 }
 
+#[allow(dead_code)]
 pub fn hud_error() -> Hsla {
     rgb(0xef4444).into()
 }
 
+#[allow(dead_code)]
 pub fn hud_ok() -> Hsla {
     rgb(0x22c55e).into()
 }
 
+#[allow(dead_code)]
 pub fn hud_warn() -> Hsla {
     rgb(0xf59e0b).into()
 }
 
+#[allow(dead_code)]
 pub fn hud_dim() -> Hsla {
     rgb(0x3a3a3a).into()
 }
 
+#[allow(dead_code)]
 pub fn hud_fg() -> Hsla {
     rgb(0x0a0a0a).into()
 }
 
+#[allow(dead_code)]
 pub fn hud_fg_dim() -> Hsla {
     rgb(0x6a6a6a).into()
 }

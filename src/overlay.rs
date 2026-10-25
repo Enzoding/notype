@@ -3,8 +3,8 @@ use std::time::Duration;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{Icon, IconName, Sizable, Size};
 use gpui_kit::{
-    Animation, AnimationExt, Context, Entity, FontWeight, Hsla, IntoElement, ParentElement,
-    Render, Styled, Window, div, px,
+    Animation, AnimationExt, BoxShadow, Context, Entity, FontWeight, Hsla, IntoElement, ParentElement,
+    Render, Styled, Window, div, hsla, px, rgb,
 };
 use objc2::MainThreadMarker;
 use objc2_app_kit::{
@@ -14,7 +14,6 @@ use objc2_app_kit::{
 use objc2_foundation::{NSPoint, NSString};
 
 use crate::session::{Notice, Phase, Session, Stage, mmss};
-use crate::ui;
 use crate::views::components::ellipsize;
 
 const VOICE_TITLE: &str = "OpenTypeless Voice";
@@ -194,21 +193,41 @@ fn hud_shell() -> gpui_kit::Div {
     div()
         .flex()
         .items_center()
-        .h(px(44.0))
+        .h(px(46.0))
         .px(px(16.0))
         .gap(px(10.0))
         .rounded_full()
-        .bg(ui::hud_bg())
+        .bg(rgb(0x112822))
+        .border_1()
+        .border_color(hsla(150.0, 0.4, 0.45, 0.28))
+        .shadow(vec![
+            BoxShadow::new(px(0.0), px(1.0), hsla(150.0, 0.5, 0.8, 0.12)).inset(),
+            BoxShadow::new(px(0.0), px(8.0), hsla(0.0, 0.0, 0.0, 0.5))
+                .blur_radius(px(20.0))
+                .spread_radius(px(-4.0)),
+        ])
         .text_size(px(14.0))
-        .text_color(ui::hud_fg())
+        .text_color(rgb(0xf2fcf6))
 }
 
 fn listening_view(wave: [f32; crate::capture::WAVE_BARS], elapsed: Duration) -> gpui_kit::Div {
     hud_shell()
-        .child(div().size(px(8.0)).rounded_full().bg(ui::hud_live()))
+        .child(
+            div()
+                .size(px(8.0))
+                .rounded_full()
+                .bg(rgb(0x34d399))
+                .shadow(vec![BoxShadow::new(
+                    px(0.0),
+                    px(0.0),
+                    rgb(0x34d399).opacity(0.8).into(),
+                )
+                .blur_radius(px(6.0))]),
+        )
         .child(
             div()
                 .font_weight(FontWeight::MEDIUM)
+                .text_color(rgb(0xf2fcf6))
                 .child(mmss(elapsed)),
         )
         .child(wave_view(wave))
@@ -219,59 +238,102 @@ fn wave_view(wave: [f32; crate::capture::WAVE_BARS]) -> gpui_kit::Div {
     div()
         .flex()
         .items_center()
-        .gap(px(2.0))
-        .h(px(18.0))
+        .gap(px(2.5))
+        .h(px(26.0))
         .children((0..crate::capture::WAVE_BARS * 2).map(move |index| {
             let source = if index < crate::capture::WAVE_BARS {
                 crate::capture::WAVE_BARS - 1 - index
             } else {
                 index - crate::capture::WAVE_BARS
             };
-            let level = wave[source].clamp(0.0, 1.0).powf(0.65);
-            let height = 3.0 + level * 14.0;
+            let raw_level = wave[source];
+            // Amplitude boosted so waves dance visibly with voice
+            let level = (raw_level * 1.8).clamp(0.0, 1.0).powf(0.5);
+            let height = 4.0 + level * 20.0;
             let center = crate::capture::WAVE_BARS as f32 - 0.5;
             let distance = (index as f32 - center).abs() / crate::capture::WAVE_BARS as f32;
-            let alpha = 0.38 + 0.62 * (1.0 - distance).clamp(0.0, 1.0);
+            let alpha = 0.50 + 0.50 * (1.0 - distance).clamp(0.0, 1.0);
             div()
                 .w(px(2.5))
                 .h(px(height))
                 .rounded(px(1.25))
-                .bg(ui::hud_live().opacity(alpha))
+                .bg(rgb(0x34d399).opacity(alpha))
         }))
 }
 
 fn working_view(stage: Stage) -> gpui_kit::Div {
+    let total_width = 160.0;
+    let progress = match stage {
+        Stage::Transcribe => 0.42,
+        Stage::Polish => 0.78,
+        Stage::Insert => 0.96,
+    };
+    let fill_w = total_width * progress;
+
     hud_shell()
-        .child(Spinner::new().with_size(Size::Small))
+        .w(px(total_width))
+        .overflow_hidden()
+        .relative()
         .child(
             div()
-                .font_weight(FontWeight::MEDIUM)
-                .child(stage.short_label()),
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .left_0()
+                .w(px(fill_w))
+                .rounded_full()
+                .bg(rgb(0x1c4a3e))
+                .border_r_1()
+                .border_color(rgb(0x34d399).opacity(0.85)),
         )
-        .child(esc_hint())
+        .child(
+            div()
+                .relative()
+                .flex()
+                .size_full()
+                .items_center()
+                .justify_between()
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .child(Spinner::new().with_size(Size::Small))
+                        .child(
+                            div()
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(rgb(0xf2fcf6))
+                                .child("处理中"),
+                        ),
+                )
+                .child(esc_hint()),
+        )
 }
 
 fn esc_hint() -> gpui_kit::Div {
     div()
-        .text_size(px(12.0))
-        .text_color(ui::hud_fg_dim())
+        .text_size(px(11.0))
+        .text_color(hsla(150.0, 0.25, 0.75, 0.6))
         .child("esc")
 }
 
 fn hud_notice_look(notice: &Notice) -> (IconName, Hsla) {
     match notice {
-        Notice::Done(_) => (IconName::Check, ui::hud_ok()),
-        Notice::Copied => (IconName::Copy, ui::hud_dim()),
-        Notice::Warn(_) => (IconName::TriangleAlert, ui::hud_warn()),
-        Notice::Error(_) => (IconName::CircleAlert, ui::hud_error()),
+        Notice::Done(_) => (IconName::Check, rgb(0x34d399).into()),
+        Notice::Copied => (IconName::Copy, hsla(150.0, 0.2, 0.8, 0.85)),
+        Notice::Warn(_) => (IconName::TriangleAlert, rgb(0xfbbf24).into()),
+        Notice::Error(_) => (IconName::CircleAlert, rgb(0xf87171).into()),
     }
 }
 
 fn message_view(notice: &Notice) -> gpui_kit::Div {
     let (icon, color) = hud_notice_look(notice);
-    hud_shell().child(Icon::new(icon).size(px(16.0)).text_color(color)).child(
-        div()
-            .max_w(px(320.0))
-            .child(ellipsize(notice.text(), 36)),
-    )
+    hud_shell()
+        .child(Icon::new(icon).size(px(16.0)).text_color(color))
+        .child(
+            div()
+                .max_w(px(320.0))
+                .text_color(rgb(0xf2fcf6))
+                .child(ellipsize(notice.text(), 36)),
+        )
 }

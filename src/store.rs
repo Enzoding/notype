@@ -723,6 +723,7 @@ impl Store {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn accept_all_pending(&self) -> Result<usize> {
         let pending = self.pending_candidates().unwrap_or_default();
         let mut accepted = 0usize;

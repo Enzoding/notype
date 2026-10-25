@@ -11,6 +11,7 @@ use crate::store::PhraseCandidate;
 use crate::ui;
 use crate::views::components::primitives::{ellipsize, small_action_pill};
 
+#[allow(dead_code)]
 pub fn candidate_row(
     candidate: PhraseCandidate,
     last: bool,
