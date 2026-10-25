@@ -3,7 +3,7 @@ use std::time::Duration;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{Icon, IconName, Sizable, Size};
 use gpui_kit::{
-    Animation, AnimationExt, BoxShadow, Context, Entity, FontWeight, Hsla, IntoElement, ParentElement,
+    Animation, AnimationExt, Context, Entity, FontWeight, Hsla, IntoElement, ParentElement,
     Render, Styled, Window, div, hsla, px, rgb,
 };
 use objc2::MainThreadMarker;
@@ -194,19 +194,13 @@ fn hud_shell() -> gpui_kit::Div {
     div()
         .flex()
         .items_center()
-        .h(px(46.0))
+        .h(px(44.0))
         .px(px(16.0))
         .gap(px(10.0))
         .rounded_full()
         .bg(rgb(0x112822))
         .border_1()
-        .border_color(hsla(150.0, 0.4, 0.45, 0.28))
-        .shadow(vec![
-            BoxShadow::new(px(0.0), px(1.0), hsla(150.0, 0.5, 0.8, 0.12)).inset(),
-            BoxShadow::new(px(0.0), px(8.0), hsla(0.0, 0.0, 0.0, 0.5))
-                .blur_radius(px(20.0))
-                .spread_radius(px(-4.0)),
-        ])
+        .border_color(hsla(150.0, 0.40, 0.45, 0.35))
         .text_size(px(14.0))
         .text_color(rgb(0xf2fcf6))
 }
@@ -217,13 +211,7 @@ fn listening_view(wave: [f32; crate::capture::WAVE_BARS], elapsed: Duration) -> 
             div()
                 .size(px(8.0))
                 .rounded_full()
-                .bg(rgb(0x34d399))
-                .shadow(vec![BoxShadow::new(
-                    px(0.0),
-                    px(0.0),
-                    rgb(0x34d399).opacity(0.8).into(),
-                )
-                .blur_radius(px(6.0))]),
+                .bg(rgb(0x34d399)),
         )
         .child(
             div()
@@ -236,28 +224,40 @@ fn listening_view(wave: [f32; crate::capture::WAVE_BARS], elapsed: Duration) -> 
 }
 
 fn wave_view(wave: [f32; crate::capture::WAVE_BARS]) -> gpui_kit::Div {
+    const TOTAL_BARS: usize = 12;
+    const HALF_BARS: usize = TOTAL_BARS / 2;
+
     div()
         .flex()
         .items_center()
         .gap(px(2.5))
-        .h(px(26.0))
-        .children((0..crate::capture::WAVE_BARS * 2).map(move |index| {
-            let source = if index < crate::capture::WAVE_BARS {
-                crate::capture::WAVE_BARS - 1 - index
+        .h(px(30.0))
+        .children((0..TOTAL_BARS).map(move |index| {
+            let dist = if index < HALF_BARS {
+                HALF_BARS - 1 - index
             } else {
-                index - crate::capture::WAVE_BARS
+                index - HALF_BARS
             };
+            let norm_dist = dist as f32 / (HALF_BARS as f32 - 0.5);
+            let source = (dist * crate::capture::WAVE_BARS / HALF_BARS).min(crate::capture::WAVE_BARS - 1);
             let raw_level = wave[source];
-            // Amplitude boosted so waves dance visibly with voice
-            let level = (raw_level * 1.8).clamp(0.0, 1.0).powf(0.5);
-            let height = 4.0 + level * 20.0;
-            let center = crate::capture::WAVE_BARS as f32 - 0.5;
-            let distance = (index as f32 - center).abs() / crate::capture::WAVE_BARS as f32;
-            let alpha = 0.50 + 0.50 * (1.0 - distance).clamp(0.0, 1.0);
+
+            // Substantially boosted sensitivity so voice syllables pop vigorously
+            let boosted = (raw_level * 3.8).min(1.0);
+            let level = boosted.powf(0.65);
+
+            // Center bars bounce higher with maximum dynamic swing; outer bars flank smoothly
+            let shape = 0.40 + 0.60 * (1.0 - norm_dist);
+            let bar_level = level * shape;
+
+            // Height expands from 3.0px dot up to 26.0px full jump (23px swing)
+            let height = 3.0 + bar_level * 23.0;
+            let alpha = 0.45 + 0.55 * (1.0 - norm_dist * 0.6);
+
             div()
-                .w(px(2.5))
+                .w(px(2.8))
                 .h(px(height))
-                .rounded(px(1.25))
+                .rounded(px(1.4))
                 .bg(rgb(0x34d399).opacity(alpha))
         }))
 }
@@ -281,11 +281,8 @@ fn working_view(progress: f32) -> gpui_kit::Div {
                 .w(px(fill_w))
                 .rounded_full()
                 .bg(rgb(0x194d3e))
-                // Glowing leading edge highlight
-                .shadow(vec![
-                    BoxShadow::new(px(2.0), px(0.0), rgb(0x34d399).opacity(0.7).into())
-                        .blur_radius(px(8.0)),
-                ]),
+                .border_r_1()
+                .border_color(rgb(0x34d399).opacity(0.85)),
         )
         // Foreground content with spinner and "处理中"
         .child(

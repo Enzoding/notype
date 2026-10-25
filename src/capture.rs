@@ -159,9 +159,9 @@ fn push_wave(samples: &[f32]) {
     }
     if let Ok(mut bars) = WAVE.lock() {
         for (bar, sample) in bars.iter_mut().zip(next) {
-            // Fast attack, slow release: the envelope follows speech without
-            // flickering on every audio buffer.
-            let coefficient = if sample > *bar { 0.55 } else { 0.10 };
+            // Fast attack, snappy release: tracks speech syllables and pauses
+            // so waves bounce dynamically rather than lingering.
+            let coefficient = if sample > *bar { 0.75 } else { 0.22 };
             *bar += (sample - *bar) * coefficient;
         }
     }
