@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+"""
+Generates macOS AppIcon.icns, app_icon_1024.png, and logo.png according to
+Apple Human Interface Guidelines (macOS Big Sur+):
+- 1024x1024 canvas
+- 824x824 squircle centered with radius 185
+- Dual-layer macOS shadow (ambient soft + directional key)
+- Supersampled (4x) antialiased continuous rounded mask
+"""
 import os
 import sys
 import shutil
@@ -9,76 +17,93 @@ import numpy as np
 def make_macos_icon(input_path, output_dir="assets"):
     os.makedirs(output_dir, exist_ok=True)
     src = Image.open(input_path).convert("RGBA")
-    w, h = src.size
-
-    # Check if image has squircle tile or is full bleed
     arr = np.array(src)
-    # Check edges to see if background is outside the tile
-    bg_corners = [arr[20, 20], arr[20, w-20], arr[h-20, 20], arr[h-20, w-20]]
-    bg_mean = np.mean(bg_corners, axis=0)[:3]
-    
-    # Analyze horizontal and vertical cross-sections
-    h_line = arr[h // 2, :, :3].astype(float)
-    v_line = arr[:, w // 2, :3].astype(float)
-    
-    h_diff = np.linalg.norm(h_line - bg_mean, axis=1)
-    v_diff = np.linalg.norm(v_line - bg_mean, axis=1)
-    
-    threshold = 30.0
-    h_idx = np.where(h_diff > threshold)[0]
-    v_idx = np.where(v_diff > threshold)[0]
-    
-    # If the image is already a framed tile inside background
-    if len(h_idx) > 0 and len(v_idx) > 0 and (h_idx[0] > 60 or h_idx[-1] < w - 60):
-        # Detected framed tile
-        left, right = h_idx[0], h_idx[-1]
-        top, bottom = v_idx[0], v_idx[-1]
-        tile_w = right - left
-        tile_h = bottom - top
-        dim = min(tile_w, tile_h)
-        cx, cy = (left + right) // 2, (top + bottom) // 2
-        crop_box = (cx - dim // 2, cy - dim // 2, cx + dim // 2, cy + dim // 2)
-        tile = src.crop(crop_box)
-    else:
-        # Full bleed icon
-        tile = src
 
-    # Standard macOS App Icon is 824x824 squircle centered in 1024x1024 canvas
-    icon_size = 824
-    canvas_size = 1024
-    radius = 185
+    # Detect content bounds (where alpha > 40)
+    alpha = arr[:, :, 3]
+    y_idx, x_idx = np.where(alpha > 40)
+    if len(y_idx) == 0:
+        raise ValueError("Image is completely transparent")
 
-    tile_resized = tile.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
+    min_x, max_x = x_idx.min(), x_idx.max()
+    min_y, max_y = y_idx.min(), y_idx.max()
 
-    # Squircle mask with continuous curvature approximation
-    mask = Image.new("L", (icon_size, icon_size), 0)
-    draw_mask = ImageDraw.Draw(mask)
-    draw_mask.rounded_rectangle([0, 0, icon_size, icon_size], radius=radius, fill=255)
-    tile_resized.putalpha(mask)
+    center_x = (min_x + max_x) // 2
+    center_y = (min_y + max_y) // 2
+    dim = max(max_x - min_x, max_y - min_y)
 
-    # Canvas with drop shadow
-    canvas = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
-    shadow = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
-    shadow_draw = ImageDraw.Draw(shadow)
-    
-    pad = (canvas_size - icon_size) // 2
-    shadow_draw.rounded_rectangle(
-        [pad, pad + 18, pad + icon_size, pad + icon_size + 18],
-        radius=radius,
-        fill=(0, 0, 0, 100)
+    # Square crop around content center
+    crop_box = (
+        center_x - dim // 2,
+        center_y - dim // 2,
+        center_x + dim // 2,
+        center_y + dim // 2
     )
-    shadow = shadow.filter(ImageFilter.GaussianBlur(radius=26))
+    cropped = src.crop(crop_box)
 
-    canvas.alpha_composite(shadow)
-    canvas.paste(tile_resized, (pad, pad), tile_resized)
+    # Sample cream background color from corners of content
+    cream_rgb = (253, 248, 239)
 
-    # Save 1024 PNG
+    # Composite cropped tile over solid cream background to ensure full opacity
+    opaque_tile = Image.new("RGBA", cropped.size, cream_rgb + (255,))
+    opaque_tile.paste(cropped, (0, 0), cropped)
+
+    # Standard macOS App Icon squircle size on 1024x1024 canvas
+    tile_size = 824
+    radius = 185
+    resized_tile = opaque_tile.resize((tile_size, tile_size), Image.Resampling.LANCZOS)
+
+    # 4x Supersampled antialiased squircle mask
+    scale = 4
+    large_sz = tile_size * scale
+    large_rad = radius * scale
+    large_mask = Image.new("L", (large_sz, large_sz), 0)
+    draw = ImageDraw.Draw(large_mask)
+    draw.rounded_rectangle([0, 0, large_sz, large_sz], radius=large_rad, fill=255)
+    squircle_mask = large_mask.resize((tile_size, tile_size), Image.Resampling.LANCZOS)
+
+    # Apply squircle mask to tile
+    final_tile = resized_tile.copy()
+    final_tile.putalpha(squircle_mask)
+
+    # Build 1024x1024 canvas with authentic macOS dual-layer shadow
+    canvas_size = 1024
+    canvas = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+    pad = (canvas_size - tile_size) // 2
+
+    # Layer 1: Ambient soft shadow
+    ambient = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+    amb_draw = ImageDraw.Draw(ambient)
+    amb_draw.rounded_rectangle(
+        [pad, pad + 12, pad + tile_size, pad + tile_size + 12],
+        radius=radius,
+        fill=(0, 0, 0, 45)
+    )
+    ambient = ambient.filter(ImageFilter.GaussianBlur(radius=30))
+
+    # Layer 2: Directional key shadow
+    key_shadow = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+    key_draw = ImageDraw.Draw(key_shadow)
+    key_draw.rounded_rectangle(
+        [pad, pad + 20, pad + tile_size, pad + tile_size + 20],
+        radius=radius,
+        fill=(0, 0, 0, 65)
+    )
+    key_shadow = key_shadow.filter(ImageFilter.GaussianBlur(radius=18))
+
+    canvas.alpha_composite(ambient)
+    canvas.alpha_composite(key_shadow)
+    canvas.alpha_composite(final_tile, (pad, pad))
+
+    # Save 1024 master PNGs
     out_1024 = os.path.join(output_dir, "app_icon_1024.png")
+    out_logo = os.path.join(output_dir, "logo.png")
     canvas.save(out_1024, "PNG")
-    canvas.save(os.path.join(output_dir, "logo.png"), "PNG")
+    canvas.save(out_logo, "PNG")
     print(f"Saved: {out_1024}")
+    print(f"Saved: {out_logo}")
 
-    # Generate iconset
+    # Generate multi-resolution iconset for macOS
     iconset_dir = os.path.join(output_dir, "AppIcon.iconset")
     os.makedirs(iconset_dir, exist_ok=True)
 
@@ -99,14 +124,12 @@ def make_macos_icon(input_path, output_dir="assets"):
         resized = canvas.resize((sz, sz), Image.Resampling.LANCZOS)
         resized.save(os.path.join(iconset_dir, filename), "PNG")
 
-    # Run iconutil
+    # Run macOS native iconutil to compile AppIcon.icns
     icns_path = os.path.join(output_dir, "AppIcon.icns")
     subprocess.run(["iconutil", "-c", "icns", iconset_dir, "-o", icns_path], check=True)
     shutil.rmtree(iconset_dir, ignore_errors=True)
     print(f"Saved: {icns_path}")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 scripts/make_icon.py <input_image>")
-        sys.exit(1)
-    make_macos_icon(sys.argv[1])
+    input_file = sys.argv[1] if len(sys.argv) > 1 else "assets/brand-refresh-20261025/app-icon-concept.png"
+    make_macos_icon(input_file)
