@@ -285,5 +285,17 @@
   "mining.status_learned": "{label}：学习 {learned} 个词条，{corrections} 条拼写纠正。",
   "studio.key_required": "请先在设置中填写并保存 API Key。",
   "studio.polish_failed": "润色失败：{error}",
-  "studio.label_correction": "润色修正"
+  "studio.label_correction": "润色修正",
+  "task.phase.recording": "录音中",
+  "task.phase.saved": "已保存",
+  "task.phase.transcribing": "转写中",
+  "task.phase.transcribed": "已转写",
+  "task.phase.polishing": "润色中",
+  "task.phase.polish_retry_pending": "润色待重试",
+  "task.phase.ready_for_delivery": "待交付",
+  "task.phase.completed": "已完成",
+  "task.phase.cancelled": "已取消",
+  "task.phase.interrupted": "已中断，可恢复",
+  "task.phase.audio_save_error": "录音保存异常",
+  "task.phase.too_short": "录音过短"
 }

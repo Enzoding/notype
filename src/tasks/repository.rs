@@ -1,4 +1,4 @@
-use super::{Summary, Task, TaskConfig, CHUNK_SECS};
+use super::{Summary, Task, TaskConfig, TaskPhase, CHUNK_SECS};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -55,7 +55,7 @@ impl Task {
             channels,
             sample_rate,
             config,
-            phase: "录音中".into(),
+            phase: TaskPhase::Recording,
             error: String::new(),
             transcripts: Vec::new(),
             transcript: String::new(),
@@ -163,7 +163,7 @@ impl Task {
         };
         Summary {
             id: self.id.clone(),
-            phase: self.phase.clone(),
+            phase: self.phase,
             error: self.error.clone(),
             transcript: transcript.clone(),
             output: if self.polished.is_empty() {
@@ -196,26 +196,31 @@ pub fn recover() -> Result<Vec<Summary>, String> {
         let entry = entry.map_err(|_| "无法读取任务目录")?;
         let id = entry.file_name().to_string_lossy().to_string();
         if let Ok(mut task) = Task::load(&id) {
-            if task.phase == "已完成" && task.polished.is_empty() && task.config.options.is_some()
+            if task.phase == TaskPhase::Completed
+                && task.polished.is_empty()
+                && task.config.options.is_some()
             {
-                task.phase = "润色待重试".into();
+                task.phase = TaskPhase::PolishRetryPending;
                 task.save()?;
             }
-            if task.phase == "已完成" {
+            if task.phase == TaskPhase::Completed {
                 continue;
             }
             if now().saturating_sub(task.updated) > 7 * 86400 {
                 task.remove()?;
                 continue;
             }
-            if matches!(task.phase.as_str(), "录音中" | "转写中" | "润色中") {
-                task.phase = "已中断，可恢复".into();
+            if matches!(
+                task.phase,
+                TaskPhase::Recording | TaskPhase::Transcribing | TaskPhase::Polishing
+            ) {
+                task.phase = TaskPhase::Interrupted;
             }
             tasks.push(task.summary());
         } else if !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit() || b == b'-') {
             tasks.push(Summary {
                 id,
-                phase: "任务元数据损坏".into(),
+                phase: TaskPhase::Interrupted,
                 error: "原始文件仍保留在本机 tasks 目录；请备份后处理".into(),
                 transcript: String::new(),
                 output: String::new(),
@@ -254,7 +259,7 @@ pub(super) mod tests {
                 mode: "raw".into(),
                 save_audio: false,
             },
-            phase: "录音中".into(),
+            phase: TaskPhase::Recording,
             error: String::new(),
             transcripts: Vec::new(),
             transcript: String::new(),

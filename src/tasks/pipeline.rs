@@ -1,5 +1,5 @@
 //! Resumable processing: checkpoint each successful ASR chunk and preserve raw text on polish failure.
-use super::Task;
+use super::{model::TaskPhase, Task};
 use crate::{gateway, mining};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -22,11 +22,10 @@ pub fn process(
     if let Err(ref error) = result {
         task.error = error.clone();
         task.phase = if cancelled.load(Ordering::Acquire) {
-            "已取消"
+            TaskPhase::Cancelled
         } else {
-            "处理失败"
-        }
-        .into();
+            TaskPhase::Interrupted
+        };
         task.save()?;
     }
     result
@@ -54,7 +53,7 @@ fn run(
             return Err("没有可恢复的音频".into());
         }
         stage(false);
-        task.phase = "转写中".into();
+        task.phase = TaskPhase::Transcribing;
         task.save()?;
         for index in task.transcripts.len()..count {
             check(cancelled)?;
@@ -76,7 +75,7 @@ fn run(
             task.save()?;
         }
         task.transcript = task.transcripts.join("\n");
-        task.phase = "已转写".into();
+        task.phase = TaskPhase::Transcribed;
         task.save()?;
     }
     check(cancelled)?;
@@ -87,7 +86,7 @@ fn run(
     if let Some(options) = &task.config.options {
         if task.polished.is_empty() {
             stage(true);
-            task.phase = "润色中".into();
+            task.phase = TaskPhase::Polishing;
             task.save()?;
             let corrected = task.corrected.clone();
             let p = &task.config.polish;
@@ -114,7 +113,7 @@ fn run(
                     }
                     Err(error) => {
                         task.error = format!("润色失败：{error}");
-                        task.phase = "润色待重试".into();
+                        task.phase = TaskPhase::PolishRetryPending;
                         task.save()?;
                         return Ok(());
                     }
@@ -123,7 +122,7 @@ fn run(
             task.polished = task.polish_parts.join("\n\n");
         }
     }
-    task.phase = "待交付".into();
+    task.phase = TaskPhase::ReadyForDelivery;
     task.save()
 }
 
@@ -152,7 +151,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(task.transcript, "synthetic transcript");
-        assert_eq!(task.phase, "润色待重试");
+        assert_eq!(task.phase, TaskPhase::PolishRetryPending);
         assert!(!task.error.is_empty());
         task.remove().unwrap();
     }
@@ -172,7 +171,7 @@ mod tests {
             |_| panic!("cancelled task entered a stage")
         )
         .is_err());
-        assert_eq!(task.phase, "已取消");
+        assert_eq!(task.phase, TaskPhase::Cancelled);
         task.remove().unwrap();
     }
     #[test]
@@ -195,11 +194,11 @@ mod tests {
         let cancelled = Arc::new(AtomicBool::new(false));
         process(&mut task, &keys, &[], &[], &cancelled, |_| {}).unwrap();
         assert_eq!(task.polish_parts, vec!["saved segment"]);
-        assert_eq!(task.phase, "润色待重试");
+        assert_eq!(task.phase, TaskPhase::PolishRetryPending);
         task.polish_parts
             .resize(count, "other saved segment".into());
         process(&mut task, &keys, &[], &[], &cancelled, |_| {}).unwrap();
-        assert_eq!(task.phase, "待交付");
+        assert_eq!(task.phase, TaskPhase::ReadyForDelivery);
         assert!(task.polished.starts_with("saved segment\n\n"));
         task.remove().unwrap();
     }
@@ -219,7 +218,7 @@ mod tests {
             |_| panic!("finished transcription was repeated"),
         )
         .unwrap();
-        assert_eq!(task.phase, "待交付");
+        assert_eq!(task.phase, TaskPhase::ReadyForDelivery);
         task.remove().unwrap();
     }
 }

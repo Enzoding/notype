@@ -1,4 +1,4 @@
-use super::{atomic_write, Task};
+use super::{atomic_write, Task, TaskPhase};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
@@ -86,7 +86,7 @@ impl CaptureResult {
     pub fn finish(self) -> Result<Task, String> {
         self.worker.join().map_err(|_| "录音写入线程异常")??;
         let mut task = self.task;
-        task.phase = "已保存".into();
+        task.phase = TaskPhase::Saved;
         task.save()?;
         Ok(task)
     }

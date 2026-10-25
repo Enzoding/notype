@@ -4,6 +4,20 @@
 
 ---
 
+## [0.2.7] - 2026-10-25
+
+### 新增功能 (Features)
+- 强类型任务状态枚举 `TaskPhase`（计划 I3）：
+  - 任务状态由原本写入持久化 JSON 的中文字符串重构为强类型枚举 `TaskPhase`（涵盖 `recording`, `saved`, `transcribing`, `transcribed`, `polishing`, `polish_retry_pending`, `ready_for_delivery`, `completed`, `cancelled`, `interrupted`, `audio_save_error`, `too_short`）。
+  - 彻底解耦存储层内部状态与用户呈现文案，支持多语言动态展示（`TaskPhase::label()` 通过 `i18n::t` 动态查询当前系统或偏好语言）。
+
+### 缺陷修复 (Fixes)
+- 历史任务向前兼容反序列化：自定义 `Deserialize` 同时支持新版 Canonical ASCII 蛇形命名与历史版本中文状态（如 `"录音中"`、`"已完成"`、`"润色待重试"`），未知状态安全优雅降级为 `Interrupted`，彻底杜绝老旧草稿任务丢失。
+
+### 工程治理与文档 (Engineering & Documentation)
+- 新增 `TaskPhase` 序列化与向前兼容单元测试（覆盖全部 12 种历史中文状态及未知状态容错）。
+- 确保 `tasks` 模块零 GPUI 依赖，遵循 `AGENTS.md` 边界约束。
+
 ## [0.2.6] - 2026-10-25
 
 ### 新增功能 (Features)

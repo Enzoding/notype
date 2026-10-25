@@ -264,7 +264,7 @@ impl SettingsView {
                     .p(px(16.0))
                     .border_b_1()
                     .border_color(ui::hairline(cx))
-                    .child(format!("{} · {}", task.phase, task.id))
+                    .child(format!("{} · {}", task.phase.label(), task.id))
                     .child(div().text_color(ui::fg2(cx)).child(task.error.clone()))
                     .child(
                         div()

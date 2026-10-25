@@ -60,13 +60,13 @@ impl Session {
                             let id = capture.task.id.clone();
                             match capture.finish() {
                                 Ok(mut task) => {
-                                    task.phase = "已中断，可恢复".into();
+                                    task.phase = crate::tasks::TaskPhase::Interrupted;
                                     task.error = message;
                                     task.save()
                                 }
                                 Err(error) => {
                                     let mut task = Task::load(&id)?;
-                                    task.phase = "录音保存异常".into();
+                                    task.phase = crate::tasks::TaskPhase::AudioSaveError;
                                     task.error = error;
                                     task.save()
                                 }
@@ -206,7 +206,7 @@ impl Session {
                 .background_executor()
                 .spawn(async move {
                     let mut task = capture.finish()?;
-                    task.phase = "录音过短".into();
+                    task.phase = crate::tasks::TaskPhase::TooShort;
                     task.save()
                 })
                 .await;
@@ -259,7 +259,7 @@ impl Session {
                             Ok(task) => task,
                             Err(error) => {
                                 let mut task = Task::load(&id)?;
-                                task.phase = "录音保存异常".into();
+                                task.phase = crate::tasks::TaskPhase::AudioSaveError;
                                 task.error = error.clone();
                                 task.save()?;
                                 return Err(error);
@@ -329,7 +329,7 @@ impl Session {
                         false
                     };
                     if cancelled.load(Ordering::Acquire) {
-                        task.phase = "已取消".into();
+                        task.phase = crate::tasks::TaskPhase::Cancelled;
                         task.save()?;
                         return Err("已取消".into());
                     }
@@ -338,7 +338,7 @@ impl Session {
                     let stats = store.stats();
                     drop(store);
                     if task.error.is_empty() {
-                        task.phase = "已完成".into();
+                        task.phase = crate::tasks::TaskPhase::Completed;
                     }
                     task.save()?;
                     if task.error.is_empty() {

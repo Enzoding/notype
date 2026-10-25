@@ -285,5 +285,17 @@
   "mining.status_learned": "{label}: Learned {learned} terms, {corrections} spelling corrections.",
   "studio.key_required": "Please configure and save an API Key in Settings first.",
   "studio.polish_failed": "Polishing failed: {error}",
-  "studio.label_correction": "Polish correction"
+  "studio.label_correction": "Polish correction",
+  "task.phase.recording": "Recording",
+  "task.phase.saved": "Saved",
+  "task.phase.transcribing": "Transcribing",
+  "task.phase.transcribed": "Transcribed",
+  "task.phase.polishing": "Polishing",
+  "task.phase.polish_retry_pending": "Polish retry pending",
+  "task.phase.ready_for_delivery": "Ready for delivery",
+  "task.phase.completed": "Completed",
+  "task.phase.cancelled": "Cancelled",
+  "task.phase.interrupted": "Interrupted, recoverable",
+  "task.phase.audio_save_error": "Audio save error",
+  "task.phase.too_short": "Recording too short"
 }
