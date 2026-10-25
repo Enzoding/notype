@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-OpenTypeless is a Rust 2021 macOS dictation application using GPUI Kit. All application code lives in `src/`:
+Notype is a Rust 2021 macOS dictation application using GPUI Kit. All application code lives in `src/`:
 
 - `main.rs`: startup, windows, tray menu, and event dispatch.
 - `session/`: session state and recording lifecycle, divided into domain submodules (`lifecycle`, `settings`, `history`, `mining`, `studio`, `time`, `types`).
@@ -26,7 +26,7 @@ Run on macOS with Rust and Apple developer tools:
 
 ## UI Rendering & GPUI Performance Guidelines
 
-OpenTypeless runs at native 60~120Hz display refresh rates on macOS. Uphold these strict UI invariants:
+Notype runs at native 60~120Hz display refresh rates on macOS. Uphold these strict UI invariants:
 
 - **Render Purity & Zero Disk I/O**: `Render::render` must be pure memory layout computation. Never perform filesystem calls (`is_file`, `metadata`, `read_dir`) or synchronous I/O inside render paths; maintain indices and presence flags in memory (`Session::audio_ids`, etc.).
 - **GPUI Scroll Loop Awareness**: GPUI's `overflow_y_scroll` triggers `cx.notify` on each scroll offset tick. Avoid deep-cloning large vectors (borrow references where practical) and avoid $O(M \times N)$ linear searches inside render loops (pre-index with `HashSet`).

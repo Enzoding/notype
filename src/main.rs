@@ -105,7 +105,7 @@ fn open_settings(cx: &mut App, session: gpui_kit::Entity<Session>) -> AnyWindowH
         });
         let phrase_input = cx.new(|cx| {
             gpui_kit::component::input::InputState::new(window, cx)
-                .placeholder("输入专有名词（支持逗号分隔批量添加），如 OpenTypeless, GPUI")
+                .placeholder("输入专有名词（支持逗号分隔批量添加），如 Notype, GPUI")
         });
         let studio_input = cx.new(|cx| {
             gpui_kit::component::input::InputState::new(window, cx)
@@ -152,7 +152,7 @@ fn open_settings(cx: &mut App, session: gpui_kit::Entity<Session>) -> AnyWindowH
 
 fn open_voice_bar(cx: &mut App, session: gpui_kit::Entity<Session>) {
     let (window, _) = open_window(voice_options(cx), cx, |window, cx| {
-        window.set_window_title("OpenTypeless Voice");
+        window.set_window_title("Notype Voice");
         cx.new(|cx| overlay::OverlayView::new(session.clone(), cx))
     })
     .expect("口述小条没有打开");
@@ -195,7 +195,7 @@ fn settings_options(cx: &mut App) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {
-            title: Some("OpenTypeless".into()),
+            title: Some("Notype".into()),
             appears_transparent: true,
             ..Default::default()
         }),
@@ -229,7 +229,7 @@ fn voice_options(cx: &App) -> WindowOptions {
         is_minimizable: false,
         window_background: gpui_kit::WindowBackgroundAppearance::Transparent,
         titlebar: Some(TitlebarOptions {
-            title: Some("OpenTypeless Voice".into()),
+            title: Some("Notype Voice".into()),
             appears_transparent: true,
             ..Default::default()
         }),
@@ -248,7 +248,7 @@ fn install_tray() -> Option<tray_icon::TrayIcon> {
     let show = MenuItem::with_id("show", "打开工作台", true, None);
     let toggle = MenuItem::with_id("toggle", "开始或停止口述", true, None);
     let dock = MenuItem::with_id("dock", "切换 Dock 图标", true, None);
-    let quit = MenuItem::with_id("quit", "退出 OpenTypeless", true, None);
+    let quit = MenuItem::with_id("quit", "退出 Notype", true, None);
     menu.append(&show).ok()?;
     menu.append(&toggle).ok()?;
     menu.append(&dock).ok()?;
@@ -257,7 +257,7 @@ fn install_tray() -> Option<tray_icon::TrayIcon> {
         .with_menu(Box::new(menu))
         .with_icon(status_icon()?)
         .with_icon_as_template(true)
-        .with_tooltip("OpenTypeless")
+        .with_tooltip("Notype")
         .build()
         .ok()
 }

@@ -89,7 +89,7 @@ pub fn friendly_app_name(bundle_id: &str) -> String {
     if b.is_empty() || b == "unknown" {
         return "当前应用".into();
     }
-    if b == "opentypeless.studio" {
+    if b == "notype.studio" || b == "opentypeless.studio" {
         return "演练台".into();
     }
     const KNOWN: &[(&str, &str)] = &[
@@ -291,10 +291,10 @@ mod tests {
 
     #[test]
     fn literal_mode_mentions_code() {
-        let (system, _) = messages("let mut x", "com.microsoft.VSCode", &["OpenTypeless".into()]);
+        let (system, _) = messages("let mut x", "com.microsoft.VSCode", &["Notype".into()]);
         assert!(system.contains("code editor or terminal"));
         assert!(system.contains("Do not rewrite code"));
-        assert!(system.contains("OpenTypeless"));
+        assert!(system.contains("Notype"));
     }
 
     #[test]

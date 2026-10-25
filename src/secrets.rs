@@ -7,7 +7,20 @@ pub enum KeySource {
 }
 
 pub fn env_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.local")
+    if let Ok(dir) = crate::store::Store::data_dir() {
+        let app_env = dir.join(".env.local");
+        if app_env.exists() {
+            return app_env;
+        }
+    }
+    let manifest_env = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.local");
+    if manifest_env.exists() {
+        return manifest_env;
+    }
+    if let Ok(dir) = crate::store::Store::data_dir() {
+        return dir.join(".env.local");
+    }
+    manifest_env
 }
 
 pub fn load_key() -> (String, KeySource) {
@@ -19,7 +32,17 @@ pub fn load_key() -> (String, KeySource) {
 }
 
 pub fn save_key(key: &str) -> std::io::Result<PathBuf> {
-    let path = env_path();
+    let path = if let Ok(dir) = crate::store::Store::data_dir() {
+        let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.local");
+        if manifest_path.exists() {
+            manifest_path
+        } else {
+            let _ = std::fs::create_dir_all(&dir);
+            dir.join(".env.local")
+        }
+    } else {
+        env_path()
+    };
     let body = format!(
         "# 把 Vercel AI Gateway API Key 填在等号后面并保存。\n# 应用启动时会读这个文件；已经打开时，在设置里点「重新读取」。\nAI_GATEWAY_API_KEY={}\n",
         key.trim()

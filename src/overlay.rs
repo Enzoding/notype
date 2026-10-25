@@ -16,8 +16,8 @@ use objc2_foundation::{NSPoint, NSString};
 use crate::session::{Notice, Phase, Session, mmss};
 use crate::views::components::ellipsize;
 
-const VOICE_TITLE: &str = "OpenTypeless Voice";
-const SETTINGS_TITLE: &str = "OpenTypeless";
+const VOICE_TITLE: &str = "Notype Voice";
+const SETTINGS_TITLE: &str = "Notype";
 
 /// Keeps the standard traffic lights but drops the duplicated title text, so
 /// the window's own header can carry the name.

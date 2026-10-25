@@ -143,7 +143,7 @@ impl Session {
         }
         self.studio_dictating = for_studio;
         self.active_bundle = if for_studio {
-            "opentypeless.studio".to_string()
+            "notype.studio".to_string()
         } else {
             front_bundle_id()
         };
@@ -208,7 +208,7 @@ impl Session {
         let duration_ms = (recorded.duration_secs() * 1000.0).round() as i64;
         let wav = recorded.to_wav();
         let bundle_id = if for_studio {
-            "opentypeless.studio".to_string()
+            "notype.studio".to_string()
         } else if !self.active_bundle.is_empty() {
             self.active_bundle.clone()
         } else {

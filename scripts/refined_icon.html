@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1024px; height: 1024px; background: transparent; overflow: hidden; }
+  svg { width: 1024px; height: 1024px; display: block; }
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Multi-stage ambient + ground shadow for realistic macOS squircle -->
+    <filter id="macShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28" stdDeviation="30" flood-color="#000000" flood-opacity="0.40" />
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.22" />
+    </filter>
+
+    <!-- Deep Matte Forest Ink Gradient (matches Notype capsule #112822) -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#183129" />
+      <stop offset="40%" stop-color="#11241f" />
+      <stop offset="100%" stop-color="#0b1713" />
+    </linearGradient>
+
+    <!-- Subtle inner rim highlight -->
+    <linearGradient id="rimStroke" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.14" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02" />
+    </linearGradient>
+
+    <!-- Warm Cream Tone for Primary Letter 'n' -->
+    <linearGradient id="creamGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F4EFE6" />
+    </linearGradient>
+
+    <!-- Fresh Jade Mint Tone for Sound Waves (matches #34d399) -->
+    <linearGradient id="waveGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#6ee7b7" />
+      <stop offset="100%" stop-color="#34d399" />
+    </linearGradient>
+  </defs>
+
+  <!-- Base Squircle Tile -->
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185"
+        fill="url(#bgGrad)" filter="url(#macShadow)" />
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185"
+        fill="none" stroke="url(#rimStroke)" stroke-width="2" />
+
+  <!-- Center Motif -->
+  <g transform="translate(507, 512)">
+    <!-- Left vertical stem of 'n' -->
+    <rect x="-196" y="-140" width="52" height="280" rx="26" fill="url(#creamGrad)" />
+    
+    <!-- Arch of 'n' and right leg -->
+    <path d="M -170 -20 C -170 -125, -45 -125, -30 -30 L -30 140"
+          fill="none" stroke="url(#creamGrad)" stroke-width="52" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Harmonic Soundwave Rhythm Bars (Jade/Mint) -->
+    <rect x="42"  y="-85"  width="42" height="170" rx="21" fill="url(#waveGrad)" />
+    <rect x="112" y="-140" width="42" height="280" rx="21" fill="url(#waveGrad)" />
+    <rect x="182" y="-55"  width="42" height="110" rx="21" fill="url(#waveGrad)" opacity="0.88" />
+  </g>
+</svg>
+</body>
+</html>

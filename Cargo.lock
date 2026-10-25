@@ -4503,6 +4503,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "notype"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "base64 0.22.1",
+ "cpal",
+ "dirs 6.0.0",
+ "gpui-kit",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
+ "objc2-foundation 0.3.2",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tray-icon",
+]
+
+[[package]]
 name = "ntapi"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5061,27 +5082,6 @@ name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
-
-[[package]]
-name = "opentypeless"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arboard",
- "base64 0.22.1",
- "cpal",
- "dirs 6.0.0",
- "gpui-kit",
- "objc2 0.6.5",
- "objc2-app-kit 0.3.2",
- "objc2-core-foundation",
- "objc2-foundation 0.3.2",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "tray-icon",
-]
 
 [[package]]
 name = "option-ext"

@@ -314,7 +314,7 @@ impl Render for SettingsView {
                                                         div()
                                                             .text_size(rems(0.875))
                                                             .font_weight(FontWeight::SEMIBOLD)
-                                                            .child("OpenTypeless"),
+                                                            .child("Notype"),
                                                     )
                                                     .child(
                                                         div()

@@ -120,7 +120,12 @@ impl Store {
     pub fn open() -> Result<Self> {
         let dir = Self::data_dir()?;
         std::fs::create_dir_all(dir.join("audio"))?;
-        let conn = Connection::open(dir.join("opentypeless.db"))?;
+        let db_path = dir.join("notype.db");
+        let legacy_db = dir.join("opentypeless.db");
+        if !db_path.exists() && legacy_db.exists() {
+            let _ = std::fs::rename(&legacy_db, &db_path);
+        }
+        let conn = Connection::open(&db_path)?;
         Self::init(conn)
     }
 
@@ -219,9 +224,13 @@ impl Store {
     }
 
     pub fn data_dir() -> Result<PathBuf> {
-        Ok(dirs::data_dir()
-            .context("找不到本机数据目录")?
-            .join("OpenTypeless"))
+        let base = dirs::data_dir().context("找不到本机数据目录")?;
+        let dir = base.join("Notype");
+        let legacy_dir = base.join("OpenTypeless");
+        if !dir.exists() && legacy_dir.exists() {
+            let _ = std::fs::rename(&legacy_dir, &dir);
+        }
+        Ok(dir)
     }
 
     pub fn show_dock(&self) -> bool {
@@ -400,9 +409,8 @@ impl Store {
     }
 
     pub fn audio_path(&self, id: i64) -> PathBuf {
-        dirs::data_dir()
+        Self::data_dir()
             .unwrap_or_default()
-            .join("OpenTypeless")
             .join("audio")
             .join(format!("{id}.wav"))
     }

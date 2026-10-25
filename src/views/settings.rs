@@ -27,7 +27,7 @@ impl SettingsView {
         let key_path = secrets::env_path().display().to_string();
         let data_dir = Store::data_dir()
             .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| "~/Library/Application Support/OpenTypeless".into());
+            .unwrap_or_else(|_| "~/Library/Application Support/Notype".into());
 
         let (
             has_key,
@@ -183,9 +183,14 @@ impl SettingsView {
                                         ))
                                         .child(button(
                                             "open-ax-settings",
-                                            "打开辅助功能",
+                                            if ax_trusted {
+                                                "打开辅助功能"
+                                            } else {
+                                                "授予辅助功能权限"
+                                            },
                                             false,
                                             |_, _| {
+                                                hotkey::request_accessibility_permission();
                                                 let _ = Command::new("open")
                                                     .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
                                                     .spawn();

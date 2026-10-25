@@ -1,9 +1,13 @@
 [package]
-name = "opentypeless"
+name = "notype"
 version = "0.1.0"
 edition = "2021"
 description = "Local macOS dictation. Record, then transcribe and polish through Vercel AI Gateway."
 publish = false
+
+[[bin]]
+name = "notype"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"

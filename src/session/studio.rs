@@ -53,7 +53,7 @@ impl Session {
                         session.studio_output = polished.clone();
                         if let Ok(s) = store.lock() {
                             let _ = s.add_history(
-                                "opentypeless.studio",
+                                "notype.studio",
                                 &session.studio_raw,
                                 &polished,
                                 0,

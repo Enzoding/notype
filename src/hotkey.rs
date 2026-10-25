@@ -87,6 +87,27 @@ pub fn is_accessibility_trusted() -> bool {
     unsafe { AXIsProcessTrusted() }
 }
 
+pub fn request_accessibility_permission() -> bool {
+    unsafe {
+        let keys = [kAXTrustedCheckOptionPrompt];
+        let values = [kCFBooleanTrue];
+        let dict = CFDictionaryCreate(
+            std::ptr::null(),
+            keys.as_ptr(),
+            values.as_ptr(),
+            1,
+            std::ptr::addr_of!(kCFTypeDictionaryKeyCallBacks),
+            std::ptr::addr_of!(kCFTypeDictionaryValueCallBacks),
+        );
+        if dict.is_null() {
+            return AXIsProcessTrusted();
+        }
+        let trusted = AXIsProcessTrustedWithOptions(dict);
+        CFRelease(dict as *mut std::ffi::c_void);
+        trusted
+    }
+}
+
 pub fn is_tap_active() -> bool {
     TAP_ACTIVE.load(Ordering::Relaxed)
 }
@@ -100,37 +121,50 @@ pub fn listen(initial_code: i64, initial_mode: TriggerMode) -> mpsc::Receiver<Ho
         .expect("hotkey sender")
         .replace(tx);
     std::thread::Builder::new()
-        .name("opentypeless-hotkey".into())
+        .name("notype-hotkey".into())
         .spawn(|| unsafe { run_loop() })
         .expect("hotkey thread");
     rx
 }
 
 unsafe fn run_loop() {
-    unsafe {
-        let mask = (1u64 << KEY_DOWN) | (1u64 << FLAGS_CHANGED);
-        // Default tap so Esc can be consumed while dictation is active.
-        // Every other event is returned and continues to the front app.
-        let tap = CGEventTapCreate(
-            1,
-            0,
-            0,
-            mask,
-            tap_callback,
-            std::ptr::null_mut(),
-        );
-        if tap.is_null() {
+    let mask = (1u64 << KEY_DOWN) | (1u64 << FLAGS_CHANGED);
+    // Explicitly ask macOS to prompt the user if not yet granted
+    let _ = request_accessibility_permission();
+
+    let mut warned = false;
+    loop {
+        let tap = unsafe {
+            CGEventTapCreate(
+                1,
+                0,
+                0,
+                mask,
+                tap_callback,
+                std::ptr::null_mut(),
+            )
+        };
+        if !tap.is_null() {
+            TAP.store(tap, Ordering::Relaxed);
+            TAP_ACTIVE.store(true, Ordering::Relaxed);
+            warned = false;
+            unsafe {
+                let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
+                let run_loop = CFRunLoopGetCurrent();
+                CFRunLoopAddSource(run_loop, source, kCFRunLoopCommonModes);
+                CGEventTapEnable(tap, true);
+                CFRunLoopRun();
+            }
             TAP_ACTIVE.store(false, Ordering::Relaxed);
-            eprintln!("热键监听没有启动。请在系统设置的辅助功能里允许 OpenTypeless。");
-            return;
+            TAP.store(std::ptr::null_mut(), Ordering::Relaxed);
+        } else {
+            TAP_ACTIVE.store(false, Ordering::Relaxed);
+            if !warned {
+                eprintln!("热键监听等待辅助功能权限。请在系统设置的辅助功能里允许 Notype。");
+                warned = true;
+            }
         }
-        TAP.store(tap, Ordering::Relaxed);
-        TAP_ACTIVE.store(true, Ordering::Relaxed);
-        let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
-        let run_loop = CFRunLoopGetCurrent();
-        CFRunLoopAddSource(run_loop, source, kCFRunLoopCommonModes);
-        CGEventTapEnable(tap, true);
-        CFRunLoopRun();
+        std::thread::sleep(std::time::Duration::from_millis(800));
     }
 }
 
@@ -220,6 +254,8 @@ fn emit(ev: HotkeyEvent) {
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     fn AXIsProcessTrusted() -> bool;
+    fn AXIsProcessTrustedWithOptions(options: *const std::ffi::c_void) -> bool;
+    static kAXTrustedCheckOptionPrompt: *const std::ffi::c_void;
 }
 
 #[link(name = "CoreGraphics", kind = "framework")]
@@ -245,6 +281,9 @@ unsafe extern "C" {
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     static kCFRunLoopCommonModes: *const std::ffi::c_void;
+    static kCFBooleanTrue: *const std::ffi::c_void;
+    static kCFTypeDictionaryKeyCallBacks: std::ffi::c_void;
+    static kCFTypeDictionaryValueCallBacks: std::ffi::c_void;
     fn CFRunLoopGetCurrent() -> *mut std::ffi::c_void;
     fn CFRunLoopAddSource(
         run_loop: *mut std::ffi::c_void,
@@ -257,4 +296,13 @@ unsafe extern "C" {
         port: *mut std::ffi::c_void,
         order: isize,
     ) -> *mut std::ffi::c_void;
+    fn CFDictionaryCreate(
+        allocator: *const std::ffi::c_void,
+        keys: *const *const std::ffi::c_void,
+        values: *const *const std::ffi::c_void,
+        num_values: isize,
+        key_callbacks: *const std::ffi::c_void,
+        value_callbacks: *const std::ffi::c_void,
+    ) -> *const std::ffi::c_void;
+    fn CFRelease(value: *mut std::ffi::c_void);
 }

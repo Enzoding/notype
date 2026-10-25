@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 /// Curated terms offered as one-click chips in the dictionary page.
 pub const PRESET_PHRASES: &[&str] = &[
-    "OpenTypeless",
+    "Notype",
     "GPUI",
     "Rust",
     "TypeScript",
@@ -1196,9 +1196,9 @@ mod tests {
     #[test]
     fn rejects_terms_not_in_the_source_row() {
         let rows = vec![row(1, "Orca", "只提到了 Rust 和 GPUI。")];
-        let raw = r#"{"terms":[{"term":"OpenTypeless","kind":"product","confidence":0.99,"source_index":0,"evidence":"OpenTypeless"}]}"#;
+        let raw = r#"{"terms":[{"term":"Notype","kind":"product","confidence":0.99,"source_index":0,"evidence":"Notype"}]}"#;
         let drafts = parse_glossary(raw, &rows, &["Rust".into(), "GPUI".into()]);
-        assert!(!drafts.iter().any(|draft| draft.phrase == "OpenTypeless"));
+        assert!(!drafts.iter().any(|draft| draft.phrase == "Notype"));
     }
 
     #[test]
