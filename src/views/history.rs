@@ -25,6 +25,8 @@ impl SettingsView {
             (s.history.clone(), s.playing_id, s.repolishing_id)
         };
         let expanded_ids = self.expanded_raw_ids.clone();
+        let correction_input = self.correction_input.clone();
+        let editing_history_id = self.editing_history_id;
         let audio_dir = Store::data_dir().unwrap_or_default().join("audio");
 
         let filtered: Vec<HistoryItem> = all_history
@@ -172,6 +174,7 @@ impl SettingsView {
                             let is_playing = playing_id == Some(item.id);
                             let is_expanded = exp_ids.contains(&item.id);
                             let is_repolishing = repolishing_id == Some(item.id);
+                            let is_editing = editing_history_id == Some(item.id);
                             history_card_row(
                                 item,
                                 idx + 1 == count,
@@ -179,7 +182,9 @@ impl SettingsView {
                                 is_playing,
                                 is_expanded,
                                 is_repolishing,
+                                is_editing,
                                 copied_token.clone(),
+                                correction_input.clone(),
                                 s.clone(),
                                 v.clone(),
                                 cx,

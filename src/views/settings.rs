@@ -5,9 +5,10 @@ use gpui_kit::component::Sizable;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::IconName;
 use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{Context, FontWeight, IntoElement, ParentElement, Styled, div, px};
+use gpui_kit::{Context, FontWeight, IntoElement, ParentElement, Styled, div, px, rems};
 
 use crate::hotkey::{self, HOTKEY_OPTIONS};
+use crate::mining::AutoLearnMode;
 use crate::secrets;
 use crate::store::{Store, TriggerMode};
 use crate::ui;
@@ -47,6 +48,8 @@ impl SettingsView {
             show_dock,
             transcribe_model,
             polish_model,
+            auto_learn_mode,
+            learn_from_edits,
         ) = {
             let s = self.session.read(cx);
             (
@@ -68,6 +71,8 @@ impl SettingsView {
                 s.show_dock,
                 s.transcribe_model.clone(),
                 s.polish_model.clone(),
+                s.auto_learn_mode,
+                s.learn_from_edits,
             )
         };
 
@@ -503,7 +508,100 @@ impl SettingsView {
                             ),
                     ),
             )
-            // 4. AI Gateway & Models Section
+            // 4. Personal dictionary learning
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.0))
+                    .child(ui::section_label("个人词库", None).text_color(ui::fg2(cx)))
+                    .child(
+                        ui::card(cx)
+                            .child(
+                                setting_row(
+                                    "自动学习词条",
+                                    "从历史成稿里提取产品名、人名与术语。高置信直接加入，其余进「待确认」。",
+                                    true,
+                                    cx,
+                                )
+                                .child({
+                                    let s = session_handle.clone();
+                                    Switch::new("switch-auto-learn")
+                                        .checked(auto_learn_mode != AutoLearnMode::Off)
+                                        .accessibility_label("自动学习词条")
+                                        .on_change(move |checked, _, cx| {
+                                            let mode = if *checked {
+                                                AutoLearnMode::Auto
+                                            } else {
+                                                AutoLearnMode::Off
+                                            };
+                                            s.update(cx, |session, cx| {
+                                                session.set_auto_learn_mode(mode, cx);
+                                            });
+                                        })
+                                }),
+                            )
+                            .child(
+                                setting_row(
+                                    "学习方式",
+                                    "自动入库更省事；只给建议更可控。",
+                                    true,
+                                    cx,
+                                )
+                                .child(
+                                    choice_row().children(
+                                        [AutoLearnMode::Auto, AutoLearnMode::Suggest]
+                                            .into_iter()
+                                            .map(|mode| {
+                                                let active = auto_learn_mode == mode;
+                                                let s = session_handle.clone();
+                                                mode_chip(
+                                                    format!("settings-learn-{}", mode.as_str()),
+                                                    mode.label(),
+                                                    active,
+                                                    move |_, cx| {
+                                                        s.update(cx, |session, cx| {
+                                                            session.set_auto_learn_mode(mode, cx);
+                                                        });
+                                                    },
+                                                    cx,
+                                                )
+                                            }),
+                                    ),
+                                ),
+                            )
+                            .child(
+                                setting_row(
+                                    "从粘贴后的修正中学习",
+                                    "粘贴完成 8 秒后读取一次前台输入框，只提取你改动里的术语与拼写，不保存整段内容。",
+                                    true,
+                                    cx,
+                                )
+                                .child({
+                                    let s = session_handle.clone();
+                                    Switch::new("switch-learn-edits")
+                                        .checked(learn_from_edits)
+                                        .accessibility_label("从粘贴后的修正中学习")
+                                        .on_change(move |checked, _, cx| {
+                                            let enabled = *checked;
+                                            s.update(cx, |session, cx| {
+                                                session.set_learn_from_edits(enabled, cx);
+                                            });
+                                        })
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .px(px(16.0))
+                                    .py(px(12.0))
+                                    .text_size(px(13.0))
+                                    .line_height(rems(1.45))
+                                    .text_color(ui::fg3(cx))
+                                    .child("AI 提取会把历史文本发送到当前 AI Gateway；不发送录音。关闭自动学习后，手动词条仍然生效。"),
+                            ),
+                    ),
+            )
+            // 5. AI Gateway & Models Section
             .child(
                 div()
                     .flex()

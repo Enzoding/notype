@@ -1,5 +1,5 @@
 use gpui_kit::assets::IconName as LucideIcon;
-use gpui_kit::component::input::Input;
+use gpui_kit::component::input::{Input, Textarea};
 use gpui_kit::component::Sizable;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder;
@@ -24,6 +24,8 @@ impl SettingsView {
         let view = cx.entity();
         let session_handle = self.session.clone();
         let studio_input = self.studio_input.clone();
+        let studio_fix_input = self.studio_fix_input.clone();
+        let studio_fix_open = self.studio_fix_open;
         let copied_token = self.copied_token.clone();
 
         let (
@@ -66,6 +68,8 @@ impl SettingsView {
         };
 
         let expanded_ids = self.expanded_raw_ids.clone();
+        let correction_input = self.correction_input.clone();
+        let editing_history_id = self.editing_history_id;
         let repolishing_id = self.session.read(cx).repolishing_id;
         let audio_dir = Store::data_dir().unwrap_or_default().join("audio");
 
@@ -381,7 +385,31 @@ impl SettingsView {
                                                         }),
                                                 )
                                                 .when(!studio_output.is_empty() && !studio_busy, |row| {
+                                                    let fix_view = view.clone();
+                                                    let fix_text = studio_output.clone();
                                                     row.child(
+                                                        small_action_pill(
+                                                            "fix-studio-out",
+                                                            IconName::Replace,
+                                                            if studio_fix_open { "收起修正" } else { "修正" },
+                                                            move |window, cx| {
+                                                                fix_view.update(cx, |view, cx| {
+                                                                    if view.studio_fix_open {
+                                                                        view.studio_fix_open = false;
+                                                                        cx.notify();
+                                                                    } else {
+                                                                        view.begin_studio_fix(
+                                                                            &fix_text,
+                                                                            window,
+                                                                            cx,
+                                                                        );
+                                                                    }
+                                                                });
+                                                            },
+                                                            cx,
+                                                        ),
+                                                    )
+                                                    .child(
                                                         small_action_pill(
                                                             "copy-studio-out",
                                                             if is_copied {
@@ -420,7 +448,77 @@ impl SettingsView {
                                                 } else {
                                                     studio_output
                                                 }),
-                                        ),
+                                        )
+                                        .when(studio_fix_open && !studio_busy, |box_div| {
+                                            let s = session_handle.clone();
+                                            let v = view.clone();
+                                            let input = studio_fix_input.clone();
+                                            box_div.child(
+                                                div()
+                                                    .flex()
+                                                    .flex_col()
+                                                    .gap(px(8.0))
+                                                    .p(px(10.0))
+                                                    .rounded(px(8.0))
+                                                    .bg(ui::card_bg(cx))
+                                                    .border_1()
+                                                    .border_color(ui::hairline(cx))
+                                                    .child(
+                                                        div()
+                                                            .text_size(rems(0.6875))
+                                                            .text_color(ui::fg3(cx))
+                                                            .child("修正润色结果，保存后只学习你改动里的术语。"),
+                                                    )
+                                                    .child(
+                                                        Textarea::new(&input)
+                                                            .h(px(100.0))
+                                                            .w_full(),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .items_center()
+                                                            .justify_end()
+                                                            .gap(px(8.0))
+                                                            .child(button(
+                                                                "cancel-studio-fix",
+                                                                "取消",
+                                                                false,
+                                                                {
+                                                                    let v = v.clone();
+                                                                    move |_, cx| {
+                                                                        v.update(cx, |view, cx| {
+                                                                            view.studio_fix_open = false;
+                                                                            cx.notify();
+                                                                        });
+                                                                    }
+                                                                },
+                                                            ))
+                                                            .child(button(
+                                                                "save-studio-fix",
+                                                                "保存修正并学习",
+                                                                true,
+                                                                move |_, cx| {
+                                                                    let corrected =
+                                                                        input.read(cx).value().to_string();
+                                                                    if corrected.trim().is_empty() {
+                                                                        return;
+                                                                    }
+                                                                    s.update(cx, |session, cx| {
+                                                                        session.apply_studio_correction(
+                                                                            &corrected,
+                                                                            cx,
+                                                                        );
+                                                                    });
+                                                                    v.update(cx, |view, cx| {
+                                                                        view.studio_fix_open = false;
+                                                                        cx.notify();
+                                                                    });
+                                                                },
+                                                            )),
+                                                    ),
+                                            )
+                                        }),
                                 )
                             }),
                     ),
@@ -485,6 +583,7 @@ impl SettingsView {
                                     let is_playing = playing_id == Some(item.id);
                                     let is_expanded = exp_ids.contains(&item.id);
                                     let is_repolishing = repolishing_id == Some(item.id);
+                                    let is_editing = editing_history_id == Some(item.id);
                                     history_card_row(
                                         item,
                                         idx + 1 == count,
@@ -492,7 +591,9 @@ impl SettingsView {
                                         is_playing,
                                         is_expanded,
                                         is_repolishing,
+                                        is_editing,
                                         copied.clone(),
+                                        correction_input.clone(),
                                         s.clone(),
                                         v.clone(),
                                         cx,

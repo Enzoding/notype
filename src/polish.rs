@@ -211,7 +211,9 @@ pub fn messages_with_options(
             .map(|phrase| format!("- {phrase}"))
             .collect::<Vec<_>>()
             .join("\n");
-        format!("Keep these spellings exactly:\n{lines}")
+        format!(
+            "Keep these spellings exactly when the term is spoken. Never insert a glossary term that the speaker did not say:\n{lines}"
+        )
     };
     let spacing_rule = if options.space_cjk {
         "\nSpacing: insert a single space between Chinese characters and Latin letters/numbers (e.g. '使用 Rust 开发 macOS 应用')."

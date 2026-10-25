@@ -1,33 +1,21 @@
-use gpui_kit::component::input::Input;
 use gpui_kit::component::Sizable;
-use gpui_kit::component::IconName;
+use gpui_kit::component::{Icon, IconName};
+use gpui_kit::component::input::Input;
+use gpui_kit::component::spinner::Spinner;
+use gpui_kit::component::switch::Switch;
+use gpui_kit::component::Size;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, px, rems,
 };
 
+use crate::mining::{AutoLearnMode, PRESET_PHRASES};
 use crate::paste;
+use crate::session::format_relative_time;
 use crate::ui;
 use crate::views::SettingsView;
-use crate::views::components::{button, empty_state, phrase_row};
-
-pub const PRESET_PHRASES: &[&str] = &[
-    "OpenTypeless",
-    "GPUI",
-    "Rust",
-    "TypeScript",
-    "Next.js",
-    "Vercel",
-    "DeepSeek",
-    "Claude",
-    "Cursor",
-    "Xcode",
-    "macOS",
-    "GitHub",
-    "API Key",
-    "Prompt",
-];
+use crate::views::components::{button, candidate_row, empty_state, icon_button, phrase_row};
 
 impl SettingsView {
     pub fn render_dictionary(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -35,13 +23,351 @@ impl SettingsView {
         let session_handle = self.session.clone();
         let phrase_input = self.phrase_input.clone();
         let copied_token = self.copied_token.clone();
-        let phrases = self.session.read(cx).phrases.clone();
+        let (phrases, candidates, corrections, mining, mining_status, auto_mode, last_mined_at) = {
+            let s = self.session.read(cx);
+            (
+                s.phrases.clone(),
+                s.candidates.clone(),
+                s.corrections.clone(),
+                s.mining,
+                s.mining_status.clone(),
+                s.auto_learn_mode,
+                s.last_mined_at,
+            )
+        };
+
+        let app = &**cx;
+        let auto_on = auto_mode != AutoLearnMode::Off;
+        let status_text = if last_mined_at > 0 {
+            format!("上次学习：{}", format_relative_time(last_mined_at))
+        } else {
+            "还没有学习过".to_string()
+        };
 
         div()
             .flex()
             .flex_col()
             .gap(px(20.0))
-            // 1. Add Phrase & Batch Toolbar Card
+            // 1. Automatic learning card
+            .child(
+                ui::card(cx)
+                    .p(px(16.0))
+                    .gap(px(12.0))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap(px(12.0))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w(px(0.0))
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(2.0))
+                                    .child(
+                                        div()
+                                            .text_size(rems(0.84375))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .child("自动学习词条"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(rems(0.71875))
+                                            .text_color(ui::fg2(cx))
+                                            .child("从历史成稿里提取产品名、人名与术语。高置信直接加入，其余进「待确认」；只分析文字，不上传录音。"),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .flex_shrink_0()
+                                    .gap(px(10.0))
+                                    .when(mining, |row| {
+                                        row.child(Spinner::new().with_size(Size::Small))
+                                    })
+                                    .child({
+                                        let s = session_handle.clone();
+                                        Switch::new("auto-learn-switch")
+                                            .checked(auto_on)
+                                            .accessibility_label("自动学习词条")
+                                            .on_change(move |checked, _, cx| {
+                                                let mode = if *checked {
+                                                    AutoLearnMode::Auto
+                                                } else {
+                                                    AutoLearnMode::Off
+                                                };
+                                                s.update(cx, |session, cx| {
+                                                    session.set_auto_learn_mode(mode, cx);
+                                                });
+                                            })
+                                    }),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .flex_wrap()
+                            .gap(px(12.0))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.0))
+                                    .children(
+                                        [AutoLearnMode::Auto, AutoLearnMode::Suggest, AutoLearnMode::Off]
+                                            .into_iter()
+                                            .map(|mode| {
+                                                let active = auto_mode == mode;
+                                                let s = session_handle.clone();
+                                                div()
+                                                    .id(SharedString::from(format!(
+                                                        "learn-mode-{}",
+                                                        mode.as_str()
+                                                    )))
+                                                    .flex()
+                                                    .items_center()
+                                                    .h(px(28.0))
+                                                    .px(px(10.0))
+                                                    .rounded(px(9999.0))
+                                                    .bg(if active {
+                                                        ui::accent(cx)
+                                                    } else {
+                                                        ui::canvas_bg(cx)
+                                                    })
+                                                    .border_1()
+                                                    .border_color(if active {
+                                                        ui::accent(cx)
+                                                    } else {
+                                                        ui::hairline(cx)
+                                                    })
+                                                    .cursor_pointer()
+                                                    .hover(|st| {
+                                                        if active {
+                                                            st
+                                                        } else {
+                                                            st.bg(ui::card_hover(cx))
+                                                        }
+                                                    })
+                                                    .text_size(rems(0.6875))
+                                                    .font_weight(FontWeight::MEDIUM)
+                                                    .text_color(if active {
+                                                        ui::on_accent(cx)
+                                                    } else {
+                                                        ui::fg(cx)
+                                                    })
+                                                    .on_click(move |_, _, cx| {
+                                                        s.update(cx, |session, cx| {
+                                                            session.set_auto_learn_mode(mode, cx);
+                                                        });
+                                                    })
+                                                    .child(mode.label())
+                                            }),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(rems(0.6875))
+                                            .text_color(ui::fg3(cx))
+                                            .child(status_text),
+                                    ),
+                            )
+                            .child({
+                                let s = session_handle.clone();
+                                button(
+                                    "learn-now-btn",
+                                    if mining { "正在学习…" } else { "立即学习" },
+                                    false,
+                                    move |_, cx| {
+                                        s.update(cx, |session, cx| session.learn_now(cx));
+                                    },
+                                )
+                            }),
+                    )
+                    .when(!mining_status.is_empty(), |card| {
+                        card.child(
+                            div()
+                                .text_size(rems(0.6875))
+                                .text_color(ui::fg3(cx))
+                                .child(mining_status),
+                        )
+                    })
+                    .when(candidates.is_empty(), |card| {
+                        card.child(
+                            div()
+                                .text_size(rems(0.6875))
+                                .text_color(ui::fg3(cx))
+                                .child(format!(
+                                    "粘贴后 8 秒内如果你改了文字，会从改动里学习术语；当前 {} 条口述等待分析。",
+                                    self.session.read(cx).history.len()
+                                )),
+                        )
+                    }),
+            )
+            // 2. Pending candidates
+            .when(!candidates.is_empty(), |page| {
+                let count = candidates.len();
+                let s_accept = session_handle.clone();
+                let s_ignore = session_handle.clone();
+                page.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(8.0))
+                        .child(
+                            ui::section_label("待确认词条", Some(format!("共 {count} 项")))
+                                .text_color(ui::fg2(cx))
+                                .justify_between(),
+                        )
+                        .child(
+                            ui::card(cx)
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_end()
+                                        .gap(px(8.0))
+                                        .px(px(14.0))
+                                        .py(px(8.0))
+                                        .border_b_1()
+                                        .border_color(ui::hairline(cx))
+                                        .child(button(
+                                            "accept-all-candidates",
+                                            "全部接受",
+                                            false,
+                                            move |_, cx| {
+                                                s_accept.update(cx, |session, cx| {
+                                                    session.accept_all_candidates(cx);
+                                                });
+                                            },
+                                        ))
+                                        .child(button(
+                                            "ignore-all-candidates",
+                                            "全部忽略",
+                                            false,
+                                            move |_, cx| {
+                                                s_ignore.update(cx, |session, cx| {
+                                                    session.ignore_all_candidates(cx);
+                                                });
+                                            },
+                                        )),
+                                )
+                                .children({
+                                    let last = candidates.len();
+                                    let session = session_handle.clone();
+                                    let hairline = ui::hairline(cx);
+                                    let hover = ui::card_hover(cx);
+                                    let dim = ui::fg2(cx);
+                                    candidates.into_iter().enumerate().map(
+                                        move |(index, candidate)| {
+                                            candidate_row(
+                                                candidate,
+                                                index + 1 == last,
+                                                session.clone(),
+                                                hairline,
+                                                hover,
+                                                dim,
+                                                app,
+                                            )
+                                        },
+                                    )
+                                }),
+                        ),
+                )
+            })
+            // 3. Learned spelling corrections
+            .when(!corrections.is_empty(), |page| {
+                let count = corrections.len();
+                let s = session_handle.clone();
+                page.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(8.0))
+                        .child(
+                            ui::section_label("拼写纠正", Some(format!("共 {count} 条")))
+                                .text_color(ui::fg2(app))
+                                .justify_between(),
+                        )
+                        .child(
+                            ui::card(app)
+                                .child(
+                                    div()
+                                        .px(px(14.0))
+                                        .py(px(10.0))
+                                        .border_b_1()
+                                        .border_color(ui::hairline(app))
+                                        .text_size(rems(0.6875))
+                                        .text_color(ui::fg3(app))
+                                        .child("下次转写后自动替换为「正确写法」，来自你在历史或粘贴后的修正。"),
+                                )
+                                .children({
+                                    let last = corrections.len();
+                                    let session = s;
+                                    corrections.into_iter().enumerate().map(move |(index, rule)| {
+                                        let wrong = rule.wrong;
+                                        let right = rule.right;
+                                        let s = session.clone();
+                                        let del_wrong = wrong.clone();
+                                        let del_right = right.clone();
+                                        div()
+                                            .id(SharedString::from(format!("correction-{index}")))
+                                            .flex()
+                                            .items_center()
+                                            .justify_between()
+                                            .gap(px(12.0))
+                                            .px(px(14.0))
+                                            .py(px(9.0))
+                                            .when(index + 1 != last, |row| {
+                                                row.border_b_1().border_color(ui::hairline(app))
+                                            })
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap(px(8.0))
+                                                    .child(
+                                                        div()
+                                                            .text_size(rems(0.75))
+                                                            .text_color(ui::fg3(app))
+                                                            .child(wrong),
+                                                    )
+                                                    .child(
+                                                        Icon::new(IconName::ArrowRight)
+                                                            .size(px(12.0))
+                                                            .text_color(ui::fg3(app)),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_size(rems(0.8125))
+                                                            .font_weight(FontWeight::MEDIUM)
+                                                            .child(right),
+                                                    ),
+                                            )
+                                            .child(icon_button(
+                                                format!("delete-correction-{index}"),
+                                                IconName::Close,
+                                                "删除拼写纠正",
+                                                move |_, cx| {
+                                                    s.update(cx, |session, cx| {
+                                                        session.delete_correction(
+                                                            &del_wrong,
+                                                            &del_right,
+                                                            cx,
+                                                        );
+                                                    });
+                                                },
+                                                app,
+                                            ))
+                                    })
+                                }),
+                        ),
+                )
+            })
+            // 4. Add Phrase & Batch Toolbar Card
             .child(
                 ui::card(cx)
                     .p(px(16.0))
@@ -53,6 +379,8 @@ impl SettingsView {
                             .justify_between()
                             .child(
                                 div()
+                                    .flex_1()
+                                    .min_w(px(0.0))
                                     .flex()
                                     .flex_col()
                                     .gap(px(2.0))
@@ -73,6 +401,7 @@ impl SettingsView {
                                 div()
                                     .flex()
                                     .items_center()
+                                    .flex_shrink_0()
                                     .gap(px(12.0))
                                     .child({
                                         let s = session_handle.clone();
@@ -191,7 +520,7 @@ impl SettingsView {
                             })),
                     ),
             )
-            // 2. Active Glossary List
+            // 5. Active Glossary List
             .child(
                 div()
                     .flex()
@@ -200,7 +529,7 @@ impl SettingsView {
                     .child(
                         ui::section_label(
                             "已启用词条",
-                            Some(format!("共 {} 项", phrases.len())),
+                            Some(format!("共 {} 项 · 前 {} 项参与识别", phrases.len(), crate::mining::ACTIVE_PHRASE_LIMIT)),
                         )
                         .text_color(ui::fg2(cx))
                         .justify_between(),
@@ -211,7 +540,7 @@ impl SettingsView {
                                 card.child(empty_state(
                                     IconName::BookOpen,
                                     "词库还是空的",
-                                    "点击上方推荐词条或手动输入产品名、人名、技术术语，防止同音字误识别。",
+                                    "点击上方「立即学习」，从已有口述里自动提取术语；也可以手动添加产品名、人名或技术术语。",
                                     cx,
                                 ))
                             })
@@ -225,6 +554,8 @@ impl SettingsView {
                                     phrase_row(
                                         phrase.id,
                                         phrase.phrase,
+                                        phrase.source,
+                                        phrase.hits,
                                         index + 1 == count,
                                         session.clone(),
                                         hairline,

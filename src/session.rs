@@ -5,14 +5,18 @@ use std::time::Duration;
 use gpui_kit::Context;
 
 use crate::audio::{self, SoundCue};
+use crate::ax;
 use crate::capture::ActiveRecording;
 use crate::front::front_bundle_id;
 use crate::gateway::{self, POLISH_MODEL, TRANSCRIBE_MODEL};
 use crate::hotkey::{self, HotkeyEvent};
+use crate::mining::{self, AutoLearnMode, CorrectionRule, EditLearning, EditMode};
 use crate::paste::{self, InsertResult};
 use crate::polish::{self, PolishMode, PolishOptions};
 use crate::secrets::{self, KeySource};
-use crate::store::{HistoryItem, Phrase, StatsSummary, Store, TriggerMode};
+use crate::store::{
+    HistoryItem, Phrase, PhraseCandidate, StatsSummary, Store, TriggerMode,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stage {
@@ -100,6 +104,13 @@ pub struct Session {
     pub gateway_test_status: Option<(bool, String)>,
     pub gateway_testing: bool,
     pub phrases: Vec<Phrase>,
+    pub candidates: Vec<PhraseCandidate>,
+    pub corrections: Vec<CorrectionRule>,
+    pub auto_learn_mode: AutoLearnMode,
+    pub learn_from_edits: bool,
+    pub mining: bool,
+    pub mining_status: String,
+    pub last_mined_at: i64,
     pub history: Vec<HistoryItem>,
     pub stats: StatsSummary,
     pub active_bundle: String,
@@ -129,6 +140,12 @@ impl Session {
         let (key, source) = secrets::load_key();
         let _ = (TRANSCRIBE_MODEL, POLISH_MODEL);
         let phrases = store.phrases().unwrap_or_default();
+        let candidates = store.pending_candidates().unwrap_or_default();
+        let corrections = store.corrections();
+        let auto_learn_mode = AutoLearnMode::from_str(&store.auto_learn_mode());
+        let learn_from_edits = store.learn_from_edits();
+        let last_mined_at = store.last_mined_at();
+        let last_mine_error = store.last_mine_error();
         let history = store.history().unwrap_or_default();
         let stats = store.stats();
         let show_dock = store.show_dock();
@@ -164,6 +181,17 @@ impl Session {
             gateway_test_status: None,
             gateway_testing: false,
             phrases,
+            candidates,
+            corrections,
+            auto_learn_mode,
+            learn_from_edits,
+            mining: false,
+            mining_status: if last_mine_error.is_empty() {
+                String::new()
+            } else {
+                format!("上次学习失败：{}", truncate_text(&last_mine_error, 80))
+            },
+            last_mined_at,
             history,
             stats,
             active_bundle: String::new(),
@@ -261,6 +289,22 @@ impl Session {
         self.save_audio = enabled;
         if let Ok(store) = self.store.lock() {
             let _ = store.set_save_audio(enabled);
+        }
+        cx.notify();
+    }
+
+    pub fn set_auto_learn_mode(&mut self, mode: AutoLearnMode, cx: &mut Context<Self>) {
+        self.auto_learn_mode = mode;
+        if let Ok(store) = self.store.lock() {
+            let _ = store.set_auto_learn_mode(mode.as_str());
+        }
+        cx.notify();
+    }
+
+    pub fn set_learn_from_edits(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.learn_from_edits = enabled;
+        if let Ok(store) = self.store.lock() {
+            let _ = store.set_learn_from_edits(enabled);
         }
         cx.notify();
     }
@@ -584,8 +628,342 @@ impl Session {
         if let Ok(store) = self.store.lock() {
             let _ = store.delete_phrase(id);
             self.phrases = store.phrases().unwrap_or_default();
+            self.candidates = store.pending_candidates().unwrap_or_default();
+            self.corrections = store.corrections();
         }
         cx.notify();
+    }
+
+    pub fn accept_candidate(&mut self, id: i64, cx: &mut Context<Self>) {
+        if let Ok(store) = self.store.lock() {
+            let _ = store.accept_candidate(id);
+            self.phrases = store.phrases().unwrap_or_default();
+            self.candidates = store.pending_candidates().unwrap_or_default();
+        }
+        cx.notify();
+    }
+
+    pub fn ignore_candidate(&mut self, id: i64, cx: &mut Context<Self>) {
+        if let Ok(store) = self.store.lock() {
+            let _ = store.ignore_candidate(id);
+            self.candidates = store.pending_candidates().unwrap_or_default();
+        }
+        cx.notify();
+    }
+
+    pub fn ignore_all_candidates(&mut self, cx: &mut Context<Self>) {
+        if let Ok(store) = self.store.lock() {
+            for item in store.pending_candidates().unwrap_or_default() {
+                let _ = store.ignore_candidate(item.id);
+            }
+            self.candidates = store.pending_candidates().unwrap_or_default();
+        }
+        cx.notify();
+    }
+
+    pub fn accept_all_candidates(&mut self, cx: &mut Context<Self>) {
+        if let Ok(store) = self.store.lock() {
+            let _ = store.accept_all_pending();
+            self.phrases = store.phrases().unwrap_or_default();
+            self.candidates = store.pending_candidates().unwrap_or_default();
+        }
+        cx.notify();
+    }
+
+    /// Scan history in the background. Manual scans ignore the 6-hour throttle.
+    pub fn learn_now(&mut self, cx: &mut Context<Self>) {
+        self.start_mining(true, cx);
+    }
+
+    /// Called after each history insert and at launch. Cheap when there is
+    /// nothing new; the LLM request itself always runs on a background thread.
+    pub fn maybe_mine(&mut self, cx: &mut Context<Self>) {
+        if self.mining || self.key.is_empty() || self.auto_learn_mode == AutoLearnMode::Off {
+            return;
+        }
+        let (last_id, last_at, new_rows) = {
+            let Ok(store) = self.store.lock() else {
+                return;
+            };
+            (
+                store.last_mined_history_id(),
+                store.last_mined_at(),
+                store.count_history_after(store.last_mined_history_id()),
+            )
+        };
+        if new_rows == 0 {
+            return;
+        }
+        let elapsed = now_secs().saturating_sub(last_at);
+        if last_id == 0 || new_rows >= 10 || elapsed >= 6 * 3600 {
+            self.start_mining(false, cx);
+        }
+    }
+
+    fn start_mining(&mut self, manual: bool, cx: &mut Context<Self>) {
+        if self.mining {
+            return;
+        }
+        if self.key.is_empty() {
+            self.mining_status = "先在偏好设置里保存 API Key。".into();
+            cx.notify();
+            return;
+        }
+        let (rows, existing, cursor_hint) = {
+            let Ok(store) = self.store.lock() else {
+                return;
+            };
+            let cursor = if manual {
+                0
+            } else {
+                store.last_mined_history_id()
+            };
+            let rows = if cursor == 0 {
+                store.history_for_mining(mining::MAX_MINING_ROWS)
+            } else {
+                store.history_since(cursor, mining::MAX_MINING_ROWS)
+            };
+            (
+                rows.unwrap_or_default(),
+                store.phrase_keys(),
+                store.max_history_id(),
+            )
+        };
+        if rows.is_empty() {
+            self.mining_status = "还没有新的口述记录。".into();
+            cx.notify();
+            return;
+        }
+        let mining_rows: Vec<mining::MiningRow> = rows
+            .iter()
+            .filter_map(|item| {
+                let text = item.display_text().trim();
+                if text.is_empty() {
+                    return None;
+                }
+                Some(mining::MiningRow {
+                    history_id: item.id,
+                    app: polish::friendly_app_name(&item.bundle_id),
+                    text: text.to_string(),
+                })
+            })
+            .collect();
+        if mining_rows.is_empty() {
+            self.mining_status = "还没有可分析的成稿。".into();
+            cx.notify();
+            return;
+        }
+        let prompt = mining::glossary_prompt(&mining_rows);
+        let cursor = rows
+            .iter()
+            .map(|item| item.id)
+            .max()
+            .unwrap_or(cursor_hint);
+        let key = self.key.clone();
+        let model = self.polish_model.clone();
+        let mode = self.auto_learn_mode;
+        self.mining = true;
+        self.mining_status = format!("正在分析 {} 条口述…", mining_rows.len());
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { gateway::extract_glossary(&key, &model, &prompt) })
+                .await;
+            let outcome = match result {
+                Ok(raw) => Ok(mining::parse_glossary(&raw, &mining_rows, &existing)),
+                Err(err) => Err(err),
+            };
+            let _ = this.update(cx, |session, cx| {
+                session.finish_mining(outcome, cursor, mode, cx);
+            });
+        })
+        .detach();
+    }
+
+    fn finish_mining(
+        &mut self,
+        outcome: Result<Vec<mining::CandidateDraft>, String>,
+        cursor: i64,
+        mode: AutoLearnMode,
+        cx: &mut Context<Self>,
+    ) {
+        self.mining = false;
+        match outcome {
+            Ok(drafts) => {
+                let mut accepted = 0usize;
+                if let Ok(store) = self.store.lock() {
+                    let _ = store.upsert_candidates(&drafts);
+                    if mode == AutoLearnMode::Auto {
+                        for draft in &drafts {
+                            if draft.auto_accept
+                                && store
+                                    .accept_candidate_by_key(&draft.phrase_key)
+                                    .ok()
+                                    .flatten()
+                                    .is_some()
+                            {
+                                accepted += 1;
+                            }
+                        }
+                    }
+                    let _ = store.set_last_mined_history_id(cursor);
+                    let _ = store.set_last_mined_at(now_secs());
+                    let _ = store.set_last_mine_error("");
+                    self.phrases = store.phrases().unwrap_or_default();
+                    self.candidates = store.pending_candidates().unwrap_or_default();
+                }
+                self.last_mined_at = now_secs();
+                let pending = self.candidates.len();
+                self.mining_status = if drafts.is_empty() {
+                    "没有发现新词条。".into()
+                } else if accepted > 0 {
+                    format!("已自动学习 {accepted} 个词条，{pending} 个待确认。")
+                } else {
+                    format!("发现 {} 个候选词条。", drafts.len())
+                };
+            }
+            Err(err) => {
+                self.mining_status = format!("学习失败：{}", truncate_text(&err, 90));
+                if let Ok(store) = self.store.lock() {
+                    let _ = store.set_last_mine_error(&err);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn refresh_learning(&mut self, cx: &mut Context<Self>) {
+        if let Ok(store) = self.store.lock() {
+            self.candidates = store.pending_candidates().unwrap_or_default();
+            self.phrases = store.phrases().unwrap_or_default();
+            self.corrections = store.corrections();
+        }
+        cx.notify();
+    }
+
+    pub fn delete_correction(&mut self, wrong: &str, right: &str, cx: &mut Context<Self>) {
+        if let Ok(store) = self.store.lock() {
+            let _ = store.delete_correction(wrong, right);
+            self.corrections = store.corrections();
+        }
+        cx.notify();
+    }
+
+    /// Persist a correction learned in the app (history / studio).
+    pub fn apply_history_correction(&mut self, id: i64, corrected: &str, cx: &mut Context<Self>) {
+        let Some(item) = self.store.lock().ok().and_then(|store| store.history_item(id)) else {
+            return;
+        };
+        let old = item.display_text().to_string();
+        if old.trim() == corrected.trim() {
+            return;
+        }
+        let known: Vec<String> = self.phrases.iter().map(|p| p.phrase.clone()).collect();
+        let learning =
+            mining::learn_from_edit(&old, corrected, &old, id, EditMode::General, &known);
+        if let Ok(store) = self.store.lock() {
+            let _ = store.update_history_polished(id, corrected, &item.mode);
+            self.history = store.history().unwrap_or_default();
+            self.stats = store.stats();
+        }
+        self.persist_and_refresh(learning, "历史修正", cx);
+    }
+
+    pub fn apply_studio_correction(&mut self, corrected: &str, cx: &mut Context<Self>) {
+        let old = self.studio_output.clone();
+        if old.trim() == corrected.trim() {
+            return;
+        }
+        self.studio_output = corrected.to_string();
+        let known: Vec<String> = self.phrases.iter().map(|p| p.phrase.clone()).collect();
+        let learning =
+            mining::learn_from_edit(&old, corrected, &old, 0, EditMode::General, &known);
+        self.persist_and_refresh(learning, "润色修正", cx);
+    }
+
+    fn persist_and_refresh(
+        &mut self,
+        learning: EditLearning,
+        label: &str,
+        cx: &mut Context<Self>,
+    ) {
+        if learning.is_empty() {
+            cx.notify();
+            return;
+        }
+        let (learned, corrections) = persist_learning(&self.store, &learning);
+        self.refresh_learning(cx);
+        if learned > 0 || corrections > 0 {
+            self.mining_status = format!("{label}：学习 {learned} 个词条，{corrections} 条拼写纠正。");
+        }
+        cx.notify();
+    }
+
+    /// After a paste, look at the focused field once more in the background.
+    /// This never runs on the insertion path, so typing/pasting latency is
+    /// unchanged even if the app being read is slow.
+    fn watch_paste_correction(
+        &self,
+        history_id: i64,
+        inserted_text: String,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.learn_from_edits || inserted_text.trim().is_empty() {
+            return;
+        }
+        let store = Arc::clone(&self.store);
+        let known: Vec<String> = self.phrases.iter().map(|p| p.phrase.clone()).collect();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(800))
+                .await;
+            let Some(before) = cx
+                .background_executor()
+                .spawn(async { ax::focused_text() })
+                .await
+            else {
+                return;
+            };
+            cx.background_executor()
+                .timer(Duration::from_secs(8))
+                .await;
+            let Some(after) = cx
+                .background_executor()
+                .spawn(async { ax::focused_text() })
+                .await
+            else {
+                return;
+            };
+            if before.pid != after.pid || before.text == after.text {
+                return;
+            }
+            let learning = mining::learn_from_edit(
+                &before.text,
+                &after.text,
+                &inserted_text,
+                history_id,
+                EditMode::ReplaceOnly,
+                &known,
+            );
+            if learning.is_empty() {
+                return;
+            }
+            let (learned, corrections) = persist_learning(&store, &learning);
+            if learned == 0 && corrections == 0 && learning.deleted.is_empty() {
+                return;
+            }
+            let _ = this.update(cx, |session, cx| {
+                session.refresh_learning(cx);
+                if learned > 0 || corrections > 0 {
+                    session.mining_status =
+                        format!("从粘贴后的修正中学习 {learned} 个词条");
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub fn has_key(&self) -> bool {
@@ -748,6 +1126,11 @@ impl Session {
             .lock()
             .map(|store| store.phrase_list())
             .unwrap_or_default();
+        let corrections = self
+            .store
+            .lock()
+            .map(|store| store.corrections())
+            .unwrap_or_default();
         let key = self.key.clone();
         let transcribe_model = self.transcribe_model.clone();
         let polish_model = self.polish_model.clone();
@@ -790,6 +1173,7 @@ impl Session {
                         &key,
                         &wav_for_task,
                         &phrases,
+                        &corrections,
                         polish_opts.as_ref(),
                         &transcribe_model,
                         &polish_model,
@@ -829,6 +1213,9 @@ impl Session {
         cx: &mut Context<Self>,
     ) {
         self.stages = None;
+        let mut inserted_text = String::new();
+        let mut pasted = false;
+        let mut inserted_row = None;
         let (notice, saved) = match outcome {
             Outcome::Failed(message) => {
                 if self.sound_feedback {
@@ -850,7 +1237,9 @@ impl Session {
                     self.studio_output = paste_text.clone();
                     Notice::Done(format!("已转写到演练台 · {} 字", paste_text.chars().count()))
                 } else {
+                    inserted_text = paste_text.clone();
                     let (inserted, restore) = paste::insert_text(&paste_text);
+                    pasted = matches!(inserted, InsertResult::Pasted);
                     if let Some(restore) = restore {
                         cx.spawn(async move |_this, cx| {
                             cx.background_executor()
@@ -882,6 +1271,7 @@ impl Session {
                 if let Ok(row_id) =
                     store.add_history(bundle_id, &transcript, &polished, duration_ms, mode_tag)
                 {
+                    inserted_row = Some(row_id);
                     if self.save_audio && !wav.is_empty() {
                         let _ = store.save_audio_file(row_id, wav);
                     }
@@ -890,6 +1280,12 @@ impl Session {
                 self.stats = store.stats();
             }
         }
+        if !for_studio && pasted {
+            if let Some(row_id) = inserted_row {
+                self.watch_paste_correction(row_id, inserted_text, cx);
+            }
+        }
+        self.maybe_mine(cx);
         self.note(notice, cx);
     }
 
@@ -960,6 +1356,55 @@ impl Session {
     }
 }
 
+fn persist_learning(store: &Arc<Mutex<Store>>, learning: &EditLearning) -> (usize, usize) {
+    let Ok(store) = store.lock() else {
+        return (0, 0);
+    };
+    let _ = store.upsert_candidates(&learning.terms);
+    let mut learned = 0usize;
+    for term in &learning.terms {
+        if term.auto_accept
+            && store
+                .accept_candidate_by_key(&term.phrase_key)
+                .ok()
+                .flatten()
+                .is_some()
+        {
+            learned += 1;
+        }
+    }
+    let mut corrections = 0usize;
+    for correction in &learning.corrections {
+        if correction.confidence >= 0.8
+            && store
+                .upsert_correction(&correction.wrong, &correction.right)
+                .is_ok()
+        {
+            corrections += 1;
+        }
+    }
+    for deleted in &learning.deleted {
+        let _ = store.remember_ignored(deleted, "edit-delete");
+    }
+    (learned, corrections)
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn truncate_text(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let mut out: String = text.chars().take(max).collect();
+    out.push('…');
+    out
+}
+
 enum Outcome {
     Failed(String),
     Ready {
@@ -974,6 +1419,7 @@ fn run_pipeline(
     key: &str,
     wav: &[u8],
     phrases: &[String],
+    corrections: &[mining::CorrectionRule],
     polish_opts: Option<&PolishOptions>,
     transcribe_model: &str,
     polish_model: &str,
@@ -987,15 +1433,16 @@ fn run_pipeline(
     if transcript.trim().is_empty() {
         return Outcome::Failed("没有识别到语音内容".into());
     }
+    let corrected = mining::apply_corrections(&transcript, corrections);
     let (paste_text, archive_polished, polish_failed) = match polish_opts {
         Some(opts) => {
             stage(Stage::Polish);
-            match gateway::polish_with_options(key, &transcript, phrases, opts, polish_model) {
+            match gateway::polish_with_options(key, &corrected, phrases, opts, polish_model) {
                 Ok(text) => (text.clone(), text, false),
-                Err(_) => (transcript.clone(), String::new(), true),
+                Err(_) => (corrected.clone(), String::new(), true),
             }
         }
-        None => (transcript.clone(), String::new(), false),
+        None => (corrected.clone(), String::new(), false),
     };
     stage(Stage::Insert);
     Outcome::Ready {

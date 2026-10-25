@@ -7,7 +7,7 @@ pub mod settings;
 use std::time::Duration;
 
 use gpui_kit::assets::IconName as LucideIcon;
-use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::component::Icon;
 use gpui_kit::{
     Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Render,
@@ -54,9 +54,13 @@ pub struct SettingsView {
     pub(crate) studio_input: Entity<InputState>,
     pub(crate) history_search_input: Entity<InputState>,
     pub(crate) custom_prompt_input: Entity<InputState>,
+    pub(crate) correction_input: Entity<TextareaState>,
+    pub(crate) studio_fix_input: Entity<TextareaState>,
     pub(crate) key_editing: bool,
     pub history_mode_filter: String,
     pub expanded_raw_ids: Vec<i64>,
+    pub editing_history_id: Option<i64>,
+    pub studio_fix_open: bool,
     pub copied_token: Option<String>,
     pub confirm_clear_history: bool,
 }
@@ -70,6 +74,8 @@ impl SettingsView {
         studio_input: Entity<InputState>,
         history_search_input: Entity<InputState>,
         custom_prompt_input: Entity<InputState>,
+        correction_input: Entity<TextareaState>,
+        studio_fix_input: Entity<TextareaState>,
         cx: &mut Context<Self>,
     ) -> Self {
         let key_editing = !session.read(cx).has_key();
@@ -117,9 +123,13 @@ impl SettingsView {
             studio_input,
             history_search_input,
             custom_prompt_input,
+            correction_input,
+            studio_fix_input,
             key_editing,
             history_mode_filter: "all".into(),
             expanded_raw_ids: Vec::new(),
+            editing_history_id: None,
+            studio_fix_open: false,
             copied_token: None,
             confirm_clear_history: false,
         }
@@ -141,6 +151,35 @@ impl SettingsView {
             });
         })
         .detach();
+    }
+
+    pub fn begin_history_correction(
+        &mut self,
+        id: i64,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.editing_history_id = Some(id);
+        self.correction_input.update(cx, |input, cx| {
+            input.set_value(text, window, cx);
+            input.focus(window, cx);
+        });
+        cx.notify();
+    }
+
+    pub fn begin_studio_fix(
+        &mut self,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.studio_fix_open = true;
+        self.studio_fix_input.update(cx, |input, cx| {
+            input.set_value(text, window, cx);
+            input.focus(window, cx);
+        });
+        cx.notify();
     }
 
     pub fn toggle_raw_expand(&mut self, id: i64, cx: &mut Context<Self>) {

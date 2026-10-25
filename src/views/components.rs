@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use gpui_kit::assets::IconName as LucideIcon;
 use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants};
-use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::input::{Input, InputState, Textarea, TextareaState};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{Icon, IconName, Sizable, Size};
 use gpui_kit::prelude::FluentBuilder;
@@ -16,7 +16,8 @@ use crate::hotkey;
 use crate::paste;
 use crate::polish::{self, PolishMode};
 use crate::session::{Notice, Phase, Session, format_duration_ms, format_relative_time, mmss};
-use crate::store::{HistoryItem, TriggerMode};
+use crate::mining::TermKind;
+use crate::store::{HistoryItem, PhraseCandidate, TriggerMode};
 use crate::ui;
 use crate::views::{NavTab, SettingsView};
 
@@ -511,7 +512,9 @@ pub fn history_card_row(
     is_playing: bool,
     is_expanded: bool,
     is_repolishing: bool,
+    is_editing: bool,
     copied_token: Option<String>,
+    correction_input: Entity<TextareaState>,
     session: Entity<Session>,
     view: Entity<SettingsView>,
     cx: &App,
@@ -633,6 +636,33 @@ pub fn history_card_row(
                             )
                         })
                         .child({
+                            let v = view.clone();
+                            let text_for_fix = display_text.clone();
+                            small_action_pill(
+                                format!("fix-{id}"),
+                                IconName::Replace,
+                                if is_editing { "收起修正" } else { "修正" },
+                                move |window, cx| {
+                                    if is_editing {
+                                        v.update(cx, |view, cx| {
+                                            view.editing_history_id = None;
+                                            cx.notify();
+                                        });
+                                    } else {
+                                        v.update(cx, |view, cx| {
+                                            view.begin_history_correction(
+                                                id,
+                                                &text_for_fix,
+                                                window,
+                                                cx,
+                                            );
+                                        });
+                                    }
+                                },
+                                cx,
+                            )
+                        })
+                        .child({
                             let s = session.clone();
                             let item_clone = item.clone();
                             small_action_pill(
@@ -648,7 +678,7 @@ pub fn history_card_row(
                             )
                         })
                         .child({
-                            let s = session;
+                            let s = session.clone();
                             icon_button(
                                 format!("del-hist-{id}"),
                                 IconName::Close,
@@ -670,6 +700,70 @@ pub fn history_card_row(
                 .text_color(ui::fg(cx))
                 .child(display_text),
         )
+        .when(is_editing, |col| {
+            let save_session = session.clone();
+            let cancel_view = view.clone();
+            let save_view = view.clone();
+            col.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.0))
+                    .p(px(10.0))
+                    .rounded(px(8.0))
+                    .bg(ui::well_bg(cx))
+                    .border_1()
+                    .border_color(ui::hairline(cx))
+                    .child(
+                        div()
+                            .text_size(rems(0.6875))
+                            .text_color(ui::fg3(cx))
+                            .child("修正后会保存到历史，并只学习你改动里的术语。"),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .child(Textarea::new(&correction_input).h(px(110.0)).w_full()),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_end()
+                            .gap(px(8.0))
+                            .child(button(
+                                "cancel-history-fix",
+                                "取消",
+                                false,
+                                move |_, cx| {
+                                    cancel_view.update(cx, |view, cx| {
+                                        view.editing_history_id = None;
+                                        cx.notify();
+                                    });
+                                },
+                            ))
+                            .child(button(
+                                "save-history-fix",
+                                "保存修正并学习",
+                                true,
+                                move |_, cx| {
+                                    let corrected =
+                                        correction_input.read(cx).value().to_string();
+                                    if corrected.trim().is_empty() {
+                                        return;
+                                    }
+                                    save_session.update(cx, |session, cx| {
+                                        session.apply_history_correction(id, &corrected, cx);
+                                    });
+                                    save_view.update(cx, |view, cx| {
+                                        view.editing_history_id = None;
+                                        cx.notify();
+                                    });
+                                },
+                            )),
+                    ),
+            )
+        })
         .when(is_expanded && has_distinct_raw, |col| {
             let v = view;
             let raw_copy = raw_text.clone();
@@ -1052,9 +1146,121 @@ pub fn path_row(
         )
 }
 
+pub fn candidate_row(
+    candidate: PhraseCandidate,
+    last: bool,
+    session: Entity<Session>,
+    hairline: Hsla,
+    hover: Hsla,
+    dim: Hsla,
+    cx: &App,
+) -> impl IntoElement {
+    let id = candidate.id;
+    let kind = TermKind::from_str(&candidate.kind).label();
+    let source = match candidate.source.as_str() {
+        "edit" => "来自修正",
+        "preset" => "预设命中",
+        "llm" => "AI 提取",
+        _ => "候选",
+    };
+    let confidence = (candidate.confidence.clamp(0.0, 1.0) * 100.0).round() as i32;
+    let quote = candidate
+        .evidence
+        .first()
+        .map(|item| item.quote.clone())
+        .filter(|text| !text.trim().is_empty())
+        .unwrap_or_else(|| "来自最近一次口述".into());
+    let quote = ellipsize(quote.trim(), 72);
+    let meta = format!(
+        "{} · 出现 {} 次 · {}% 置信",
+        source, candidate.hits, confidence
+    );
+    let accept_id = format!("accept-candidate-{id}");
+    let ignore_id = format!("ignore-candidate-{id}");
+    let accept_session = session.clone();
+    let ignore_session = session.clone();
+
+    div()
+        .id(SharedString::from(format!("candidate-{id}")))
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(px(12.0))
+        .px(px(14.0))
+        .py(px(10.0))
+        .when(!last, |row| row.border_b_1().border_color(hairline))
+        .hover(move |style| style.bg(hover))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(3.0))
+                .min_w(px(0.0))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .child(
+                            div()
+                                .text_size(rems(0.8125))
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(candidate.phrase.clone()),
+                        )
+                        .child(ui::pill(
+                            kind,
+                            ui::accent(cx),
+                            ui::accent_soft(cx),
+                        ))
+                        .child(
+                            div()
+                                .text_size(rems(0.65625))
+                                .text_color(dim)
+                                .child(meta),
+                        ),
+                )
+                .child(
+                    div()
+                        .text_size(rems(0.6875))
+                        .text_color(dim)
+                        .child(quote),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .child(small_action_pill(
+                    accept_id,
+                    IconName::Check,
+                    "接受",
+                    move |_, cx| {
+                        accept_session.update(cx, |session, cx| {
+                            session.accept_candidate(id, cx);
+                        });
+                    },
+                    cx,
+                ))
+                .child(small_action_pill(
+                    ignore_id,
+                    IconName::Close,
+                    "忽略",
+                    move |_, cx| {
+                        ignore_session.update(cx, |session, cx| {
+                            session.ignore_candidate(id, cx);
+                        });
+                    },
+                    cx,
+                )),
+        )
+}
+
 pub fn phrase_row(
     id: i64,
     label: String,
+    source: String,
+    hits: i64,
     last: bool,
     session: Entity<Session>,
     hairline: Hsla,
@@ -1074,6 +1280,26 @@ pub fn phrase_row(
         .when(!last, |row| row.border_b_1().border_color(hairline))
         .hover(move |style| style.bg(hover))
         .child(div().flex_1().text_size(rems(0.8125)).child(label))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .when(hits > 1, |row| {
+                    row.child(
+                        div()
+                            .text_size(rems(0.65625))
+                            .text_color(dim)
+                            .child(format!("{hits} 次")),
+                    )
+                })
+                .child(
+                    div()
+                        .text_size(rems(0.65625))
+                        .text_color(dim)
+                        .child(if source == "manual" { "手动" } else { "自动" }),
+                ),
+        )
         .child(
             div()
                 .id(SharedString::from(format!("delete-{id}")))

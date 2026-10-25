@@ -20,22 +20,34 @@ pub fn transcribe_with_model(
         model.trim()
     };
     let client = client()?;
-    let with_phrases = transcribe_body(wav, Some(phrases));
-    let response = send_transcribe(&client, key, model, with_phrases)?;
-    if response.status().is_success() {
-        return transcript_text(&response.text().unwrap_or_default());
-    }
-    if !phrases.is_empty() {
-        let plain = send_transcribe(&client, key, model, transcribe_body(wav, None))?;
-        if plain.status().is_success() {
-            return transcript_text(&plain.text().unwrap_or_default());
+    // Azure accepts a phrase list, but a very long list can be rejected (or
+    // degrade quality). If the request fails with a client error, step down to
+    // smaller lists instead of dropping the whole dictionary on the floor.
+    let mut caps = vec![phrases.len().min(crate::mining::ACTIVE_PHRASE_LIMIT), 50, 20, 0];
+    caps.dedup();
+    caps.retain(|cap| *cap == 0 || *cap <= phrases.len());
+    let mut last_error = None;
+    for cap in caps {
+        let body = if cap == 0 {
+            transcribe_body(wav, None)
+        } else {
+            transcribe_body(wav, Some(&phrases[..cap]))
+        };
+        let response = send_transcribe(&client, key, model, body)?;
+        let status = response.status();
+        if status.is_success() {
+            return transcript_text(&response.text().unwrap_or_default());
         }
-        return Err(error_message(plain.status(), &plain.text().unwrap_or_default()));
+        let text = response.text().unwrap_or_default();
+        last_error = Some(error_message(status, &text));
+        let retryable = status == reqwest::StatusCode::BAD_REQUEST
+            || status == reqwest::StatusCode::PAYLOAD_TOO_LARGE
+            || status == reqwest::StatusCode::UNPROCESSABLE_ENTITY;
+        if !retryable {
+            break;
+        }
     }
-    Err(error_message(
-        response.status(),
-        &response.text().unwrap_or_default(),
-    ))
+    Err(last_error.unwrap_or_else(|| "转写失败".into()))
 }
 
 pub fn polish_with_options(
@@ -86,6 +98,39 @@ pub fn polish_with_options(
         }
         Err(err) => Err(err),
     }
+}
+
+/// Ask the polish model to extract dictionary candidates from final
+/// transcripts. The returned string is the raw model content (JSON); parsing
+/// and validation live in `mining`.
+pub fn extract_glossary(key: &str, model: &str, prompt: &str) -> Result<String, String> {
+    let key = key.trim();
+    if key.is_empty() {
+        return Err("尚未配置 AI Gateway Key".into());
+    }
+    let model = if model.trim().is_empty() {
+        POLISH_MODEL
+    } else {
+        model.trim()
+    };
+    let client = client()?;
+    let body = serde_json::json!({
+        "model": model,
+        "temperature": 0.0,
+        "max_tokens": 1400,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "reasoning": {"enabled": false}
+    });
+    let response = send_chat(&client, key, body)?;
+    if !response.status().is_success() {
+        return Err(error_message(
+            response.status(),
+            &response.text().unwrap_or_default(),
+        ));
+    }
+    chat_content(&response.text().unwrap_or_default())
 }
 
 pub fn test_connection(key: &str, model: &str) -> Result<u128, String> {
@@ -217,17 +262,27 @@ fn transcript_text(raw: &str) -> Result<String, String> {
 }
 
 fn chat_text(raw: &str) -> Result<String, String> {
-    let value: serde_json::Value =
-        serde_json::from_str(raw).map_err(|_| "订正结果不是 JSON".to_string())?;
-    let content = value
-        .pointer("/choices/0/message/content")
-        .and_then(|item| item.as_str())
-        .unwrap_or("");
-    let text = crate::polish::parse_polished(content);
+    let content = chat_content(raw)?;
+    let text = crate::polish::parse_polished(&content);
     if text.is_empty() {
         Err("订正没有返回正文".to_string())
     } else {
         Ok(text)
+    }
+}
+
+fn chat_content(raw: &str) -> Result<String, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(raw).map_err(|_| "模型结果不是 JSON".to_string())?;
+    let content = value
+        .pointer("/choices/0/message/content")
+        .and_then(|item| item.as_str())
+        .unwrap_or("")
+        .trim();
+    if content.is_empty() {
+        Err("模型没有返回内容".to_string())
+    } else {
+        Ok(content.to_string())
     }
 }
 

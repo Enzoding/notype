@@ -1,8 +1,10 @@
 mod audio;
+mod ax;
 mod capture;
 mod front;
 mod gateway;
 mod hotkey;
+mod mining;
 mod overlay;
 mod paste;
 mod polish;
@@ -36,6 +38,7 @@ fn main() {
             ActivationPolicy::Accessory
         });
         session.update(cx, |session, cx| session.watch_level(cx));
+        session.update(cx, |session, cx| session.maybe_mine(cx));
 
         let mut settings = open_settings(cx, session.clone());
         open_voice_bar(cx, session.clone());
@@ -112,6 +115,14 @@ fn open_settings(cx: &mut App, session: gpui_kit::Entity<Session>) -> AnyWindowH
             gpui_kit::component::input::InputState::new(window, cx)
                 .placeholder("搜索历史口述内容或应用名…")
         });
+        let correction_input = cx.new(|cx| {
+            gpui_kit::component::input::TextareaState::new(window, cx)
+                .placeholder("在这里修正成稿，保存后会学习你改动中的术语…")
+        });
+        let studio_fix_input = cx.new(|cx| {
+            gpui_kit::component::input::TextareaState::new(window, cx)
+                .placeholder("修正润色结果，保存后会学习你改动中的术语…")
+        });
         let custom_prompt_input = cx.new(|cx| {
             let mut st = gpui_kit::component::input::InputState::new(window, cx)
                 .placeholder("例如：尽量精炼简短，遇到多项内容使用列表排版…");
@@ -128,6 +139,8 @@ fn open_settings(cx: &mut App, session: gpui_kit::Entity<Session>) -> AnyWindowH
                 studio_input,
                 history_search_input,
                 custom_prompt_input,
+                correction_input,
+                studio_fix_input,
                 cx,
             )
         })
