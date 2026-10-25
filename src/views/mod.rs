@@ -47,6 +47,7 @@ impl NavTab {
 }
 
 pub const DEFAULT_HISTORY_LIMIT: usize = 25;
+pub const DEFAULT_HISTORY_PAGE_SIZE: usize = 20;
 pub const DEFAULT_DICT_LIMIT: usize = 50;
 
 pub struct SettingsView {
@@ -62,6 +63,7 @@ pub struct SettingsView {
     #[allow(dead_code)]
     pub(crate) studio_fix_input: Entity<TextareaState>,
     pub(crate) key_editing: bool,
+    #[allow(dead_code)]
     pub history_mode_filter: String,
     pub expanded_raw_ids: Vec<i64>,
     pub editing_history_id: Option<i64>,
@@ -69,7 +71,10 @@ pub struct SettingsView {
     pub studio_fix_open: bool,
     pub copied_token: Option<String>,
     pub confirm_clear_history: bool,
+    #[allow(dead_code)]
     pub history_display_limit: usize,
+    pub history_page: usize,
+    pub history_page_size: usize,
     pub dict_display_limit: usize,
 }
 
@@ -110,7 +115,8 @@ impl SettingsView {
             }
         })
         .detach();
-        cx.subscribe(&history_search_input, |_, _, _: &InputEvent, cx| {
+        cx.subscribe(&history_search_input, |view, _, _: &InputEvent, cx| {
+            view.history_page = 1;
             cx.notify();
         })
         .detach();
@@ -141,6 +147,8 @@ impl SettingsView {
             copied_token: None,
             confirm_clear_history: false,
             history_display_limit: DEFAULT_HISTORY_LIMIT,
+            history_page: 1,
+            history_page_size: DEFAULT_HISTORY_PAGE_SIZE,
             dict_display_limit: DEFAULT_DICT_LIMIT,
         }
     }
