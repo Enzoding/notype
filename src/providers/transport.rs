@@ -39,7 +39,7 @@ pub(super) fn client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|_| "无法创建网络客户端，请检查代理配置".to_string())
 }
 
-pub(super) fn configure_proxy(
+pub(crate) fn configure_proxy(
     mut builder: reqwest::blocking::ClientBuilder,
 ) -> reqwest::blocking::ClientBuilder {
     // If environment variables already specify a proxy (e.g. in terminal), reqwest respects them.

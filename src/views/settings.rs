@@ -92,6 +92,7 @@ impl SettingsView {
             auto_learn_mode,
             learn_from_edits,
             ui_language,
+            update_state,
         ) = {
             let s = self.session.read(cx);
             (
@@ -110,6 +111,7 @@ impl SettingsView {
                 s.auto_learn_mode,
                 s.learn_from_edits,
                 s.ui_language,
+                s.update_state.clone(),
             )
         };
 
@@ -681,87 +683,297 @@ impl SettingsView {
                     ),
             ))
             // 5. System & Storage Section
-            .when(section==SettingsSection::System, |col| col.child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(8.0))
-                    .child(ui::section_label(crate::i18n::t("settings.system.section_title"), None).text_color(ui::fg2(cx)))
-                    .child(
-                        ui::card(cx)
-                            .child(
-                                setting_row(
-                                    crate::i18n::t("settings.language.title"),
-                                    crate::i18n::t("settings.language.subtitle"),
-                                    true,
-                                    cx,
+            .when(section==SettingsSection::System, |col| {
+                let (update_desc, update_btn, release_notes) = match &update_state {
+                    crate::updater::UpdateState::Idle => (
+                        crate::i18n::t("settings.update.check_hint").to_string(),
+                        {
+                            let s = session_handle.clone();
+                            button(
+                                "btn-check-update",
+                                crate::i18n::t("settings.update.check"),
+                                false,
+                                move |_, cx| {
+                                    s.update(cx, |session, cx| session.check_updates(cx));
+                                },
+                            )
+                        },
+                        None,
+                    ),
+                    crate::updater::UpdateState::Checking => (
+                        crate::i18n::t("settings.update.checking").to_string(),
+                        button(
+                            "btn-checking-update",
+                            crate::i18n::t("settings.update.checking"),
+                            true,
+                            |_, _| {},
+                        ),
+                        None,
+                    ),
+                    crate::updater::UpdateState::UpToDate { version: _ } => (
+                        crate::i18n::t("settings.update.up_to_date").to_string(),
+                        {
+                            let s = session_handle.clone();
+                            button(
+                                "btn-recheck-update",
+                                crate::i18n::t("settings.update.check"),
+                                false,
+                                move |_, cx| {
+                                    s.update(cx, |session, cx| session.check_updates(cx));
+                                },
+                            )
+                        },
+                        None,
+                    ),
+                    crate::updater::UpdateState::Available(info) => (
+                        format!(
+                            "{}: {} ({})",
+                            crate::i18n::t("settings.update.available"),
+                            info.name,
+                            crate::updater::format_size(info.asset_size)
+                        ),
+                        {
+                            let s = session_handle.clone();
+                            button(
+                                "btn-download-update",
+                                crate::i18n::t("settings.update.download"),
+                                true,
+                                move |_, cx| {
+                                    s.update(cx, |session, cx| session.download_update(cx));
+                                },
+                            )
+                        },
+                        Some(info.body.clone()),
+                    ),
+                    crate::updater::UpdateState::Downloading {
+                        progress,
+                        received,
+                        total,
+                        ..
+                    } => (
+                        format!(
+                            "{} {:.0}% ({}/{})",
+                            crate::i18n::t("settings.update.downloading"),
+                            progress,
+                            crate::updater::format_size(*received),
+                            crate::updater::format_size(*total)
+                        ),
+                        button(
+                            "btn-downloading-update",
+                            format!("{:.0}%", progress),
+                            true,
+                            |_, _| {},
+                        ),
+                        None,
+                    ),
+                    crate::updater::UpdateState::Downloaded { release_info, .. } => (
+                        crate::i18n::t("settings.update.downloaded_hint").to_string(),
+                        {
+                            let s = session_handle.clone();
+                            button(
+                                "btn-install-update",
+                                crate::i18n::t("settings.update.restart_and_install"),
+                                true,
+                                move |_, cx| {
+                                    s.update(cx, |session, cx| session.install_update(cx));
+                                },
+                            )
+                        },
+                        Some(release_info.body.clone()),
+                    ),
+                    crate::updater::UpdateState::Installing => (
+                        crate::i18n::t("settings.update.installing").to_string(),
+                        button(
+                            "btn-installing-update",
+                            crate::i18n::t("settings.update.installing"),
+                            true,
+                            |_, _| {},
+                        ),
+                        None,
+                    ),
+                    crate::updater::UpdateState::Error(err) => (
+                        format!("{}: {err}", crate::i18n::t("settings.update.failed")),
+                        {
+                            let s = session_handle.clone();
+                            button(
+                                "btn-retry-update",
+                                crate::i18n::t("settings.update.retry"),
+                                false,
+                                move |_, cx| {
+                                    s.update(cx, |session, cx| session.check_updates(cx));
+                                },
+                            )
+                        },
+                        None,
+                    ),
+                };
+
+                col.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(24.0))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(8.0))
+                                .child(
+                                    ui::section_label(
+                                        crate::i18n::t("settings.update.section_title"),
+                                        None,
+                                    )
+                                    .text_color(ui::fg2(cx)),
                                 )
                                 .child(
-                                    choice_row().children(
-                                        [
-                                            (crate::i18n::Preference::System, crate::i18n::t("settings.language.system")),
-                                            (crate::i18n::Preference::ZhHans, "简体中文"),
-                                            (crate::i18n::Preference::En, "English"),
-                                        ]
-                                        .into_iter()
-                                        .map(|(pref, label)| {
-                                            let active = ui_language == pref;
-                                            let s = session_handle.clone();
-                                            mode_chip(
-                                                format!("lang-{pref:?}"),
-                                                label,
-                                                active,
-                                                move |_, cx| {
-                                                    s.update(cx, |session, cx| {
-                                                        session.set_ui_language(pref, cx);
-                                                    });
-                                                },
+                                    ui::card(cx)
+                                        .child(
+                                            setting_row(
+                                                crate::i18n::t("settings.update.current_version"),
+                                                &format!(
+                                                    "v{} · {}",
+                                                    env!("CARGO_PKG_VERSION"),
+                                                    update_desc
+                                                ),
+                                                true,
                                                 cx,
                                             )
+                                            .child(update_btn),
+                                        )
+                                        .when_some(release_notes, |card, notes| {
+                                            if notes.trim().is_empty() {
+                                                card
+                                            } else {
+                                                card.child(
+                                                    div()
+                                                        .px(px(16.0))
+                                                        .py(px(12.0))
+                                                        .border_t_1()
+                                                        .border_color(ui::hairline(cx))
+                                                        .flex()
+                                                        .flex_col()
+                                                        .gap(px(6.0))
+                                                        .child(
+                                                            div()
+                                                                .text_size(px(12.0))
+                                                                .font_weight(FontWeight::SEMIBOLD)
+                                                                .text_color(ui::fg2(cx))
+                                                                .child(crate::i18n::t(
+                                                                    "settings.update.release_notes",
+                                                                )),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_size(px(12.0))
+                                                                .line_height(rems(1.4))
+                                                                .text_color(ui::fg3(cx))
+                                                                .child(notes),
+                                                        ),
+                                                )
+                                            }
                                         }),
-                                    ),
                                 ),
-                            )
-                            .child(
-                                setting_row(
-                                    crate::i18n::t("settings.system.dock"),
-                                    crate::i18n::t("settings.system.dock_desc"),
-                                    true,
-                                    cx,
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(8.0))
+                                .child(
+                                    ui::section_label(
+                                        crate::i18n::t("settings.system.section_title"),
+                                        None,
+                                    )
+                                    .text_color(ui::fg2(cx)),
                                 )
-                                .child({
-                                    let s = session_handle.clone();
-                                    let label = crate::i18n::t("settings.system.dock");
-                                    Switch::new("switch-show-dock")
-                                        .checked(show_dock)
-                                        .accessibility_label(label)
-                                        .on_change(move |checked, _, cx| {
-                                            let val = *checked;
-                                            s.update(cx, |session, cx| {
-                                                session.set_dock(val, cx);
-                                            });
-                                        })
-                                }),
-                            )
-                            .child(
-                                setting_row(
-                                    crate::i18n::t("settings.system.data_dir"),
-                                    &data_dir,
-                                    false,
-                                    cx,
-                                )
-                                .child(button(
-                                    "open-data-dir",
-                                    crate::i18n::t("settings.system.open_finder"),
-                                    false,
-                                    move |_, _| {
-                                        if let Ok(dir) = Store::data_dir() {
-                                            let _ = Command::new("open").arg(dir).spawn();
-                                        }
-                                    },
-                                )),
-                            ),
-                    ),
-            ))
+                                .child(
+                                    ui::card(cx)
+                                        .child(
+                                            setting_row(
+                                                crate::i18n::t("settings.language.title"),
+                                                crate::i18n::t("settings.language.subtitle"),
+                                                true,
+                                                cx,
+                                            )
+                                            .child(
+                                                choice_row().children(
+                                                    [
+                                                        (
+                                                            crate::i18n::Preference::System,
+                                                            crate::i18n::t(
+                                                                "settings.language.system",
+                                                            ),
+                                                        ),
+                                                        (
+                                                            crate::i18n::Preference::ZhHans,
+                                                            "简体中文",
+                                                        ),
+                                                        (crate::i18n::Preference::En, "English"),
+                                                    ]
+                                                    .into_iter()
+                                                    .map(|(pref, label)| {
+                                                        let active = ui_language == pref;
+                                                        let s = session_handle.clone();
+                                                        mode_chip(
+                                                            format!("lang-{pref:?}"),
+                                                            label,
+                                                            active,
+                                                            move |_, cx| {
+                                                                s.update(cx, |session, cx| {
+                                                                    session.set_ui_language(
+                                                                        pref, cx,
+                                                                    );
+                                                                });
+                                                            },
+                                                            cx,
+                                                        )
+                                                    }),
+                                                ),
+                                            ),
+                                        )
+                                        .child(
+                                            setting_row(
+                                                crate::i18n::t("settings.system.dock"),
+                                                crate::i18n::t("settings.system.dock_desc"),
+                                                true,
+                                                cx,
+                                            )
+                                            .child({
+                                                let s = session_handle.clone();
+                                                let label = crate::i18n::t("settings.system.dock");
+                                                Switch::new("switch-show-dock")
+                                                    .checked(show_dock)
+                                                    .accessibility_label(label)
+                                                    .on_change(move |checked, _, cx| {
+                                                        let val = *checked;
+                                                        s.update(cx, |session, cx| {
+                                                            session.set_dock(val, cx);
+                                                        });
+                                                    })
+                                            }),
+                                        )
+                                        .child(
+                                            setting_row(
+                                                crate::i18n::t("settings.system.data_dir"),
+                                                &data_dir,
+                                                false,
+                                                cx,
+                                            )
+                                            .child(button(
+                                                "open-data-dir",
+                                                crate::i18n::t("settings.system.open_finder"),
+                                                false,
+                                                move |_, _| {
+                                                    if let Ok(dir) = Store::data_dir() {
+                                                        let _ =
+                                                            Command::new("open").arg(dir).spawn();
+                                                    }
+                                                },
+                                            )),
+                                        ),
+                                ),
+                        ),
+                )
+            })
     }
 }

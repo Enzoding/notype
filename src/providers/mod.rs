@@ -7,7 +7,7 @@ mod live;
 mod profile;
 mod readiness;
 mod transcription;
-mod transport;
+pub(crate) mod transport;
 pub use catalog::{fetch_models, ModelCatalog, ModelEntry};
 pub use chat::{extract_glossary, polish_with_options, test_connection};
 pub use endpoint::{api_base, chat_url, mask_key, transcribe_url, validate_base};

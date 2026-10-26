@@ -20,6 +20,7 @@ mod settings;
 mod studio;
 mod time;
 mod types;
+mod update;
 
 pub use time::{format_duration_ms, format_relative_time, mmss};
 pub use types::{Notice, Phase, Stage};
@@ -84,6 +85,7 @@ pub struct Session {
     pub(super) note_id: u64,
     pub appearance: u64,
     pub exiting: bool,
+    pub update_state: crate::updater::UpdateState,
     pub(super) hide_epoch: u64,
 }
 
@@ -220,6 +222,7 @@ impl Session {
             note_id: 0,
             appearance: 0,
             exiting: false,
+            update_state: crate::updater::UpdateState::Idle,
             hide_epoch: 0,
         }
     }

@@ -323,9 +323,31 @@ impl Render for SettingsView {
                                                     .flex_col()
                                                     .child(
                                                         div()
-                                                            .text_size(rems(0.875))
-                                                            .font_weight(FontWeight::SEMIBOLD)
-                                                            .child("Notype"),
+                                                            .flex()
+                                                            .items_center()
+                                                            .gap(px(6.0))
+                                                            .child(
+                                                                div()
+                                                                    .text_size(rems(0.875))
+                                                                    .font_weight(
+                                                                        FontWeight::SEMIBOLD,
+                                                                    )
+                                                                    .child("Notype"),
+                                                            )
+                                                            .child(
+                                                                div()
+                                                                    .px(px(4.0))
+                                                                    .py(px(0.5))
+                                                                    .rounded(px(4.0))
+                                                                    .bg(ui::well_bg(cx))
+                                                                    .text_size(px(10.0))
+                                                                    .font_weight(FontWeight::MEDIUM)
+                                                                    .text_color(ui::fg3(cx))
+                                                                    .child(format!(
+                                                                        "v{}",
+                                                                        env!("CARGO_PKG_VERSION")
+                                                                    )),
+                                                            ),
                                                     )
                                                     .child(
                                                         div()

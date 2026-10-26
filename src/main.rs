@@ -17,6 +17,7 @@ mod session;
 mod store;
 mod tasks;
 mod ui;
+mod updater;
 mod views;
 
 use std::time::Duration;
