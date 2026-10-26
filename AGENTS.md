@@ -29,6 +29,15 @@ Run on macOS with Rust and Apple developer tools:
 - `NOTYPE_DATA_DIR=/absolute/scratch/path cargo run --locked`: isolated development data and a separate development Keychain service; does not import the project `.env.local`. Never point this at production data for smoke tests.
 - `cargo clippy --all-targets --locked`: inspect compiler and lint diagnostics (install via `rustup component add clippy` if missing).
 
+## Build Disk Budget
+
+- Development and test builds use line-table debug information and disable incremental compilation in `Cargo.toml`. Keep release packaging settings independent. Full variable debugging can be enabled temporarily with `CARGO_PROFILE_DEV_DEBUG=2`; clean afterward because profile changes can leave old artifacts.
+- Run `bash scripts/build-cache.sh report` before and after build configuration/dependency changes. Run `bash scripts/build-cache.sh check` at handoff after builds; the default local `target/` budget is 4 GiB (override with `NOTYPE_BUILD_BUDGET_MIB`). This is a maintenance alert, not a hard filesystem quota.
+- Prefer `cargo check --locked` for compile-only feedback; build/test when needed. Avoid unnecessary custom target directories, profiles and repeated release builds, which accumulate separate artifacts.
+- If over budget, stop active builds and use `bash scripts/build-cache.sh clean-dev` or `clean-all`, then rebuild only the required profile. Never clean automatically during a build or app startup. Cleanup costs a subsequent full compilation.
+- The script is restricted to this checkout's `target/`; it does not clean shared Cargo/toolchain caches, `release/`, recordings, databases or Keychain. Custom `CARGO_TARGET_DIR` locations must be measured and maintained separately.
+- See `docs/build-disk.md` for tradeoffs, baseline and commands. Record new measurements after significant build/dependency changes rather than treating the budget as guaranteed.
+
 ## UI Rendering & GPUI Performance Guidelines
 
 Notype runs at native 60~120Hz display refresh rates on macOS. Uphold these strict UI invariants:
