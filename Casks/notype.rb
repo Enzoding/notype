@@ -1,6 +1,6 @@
 cask "notype" do
-  version "0.4.0"
-  sha256 "98d9e53c75e9278a8b464c89c75d58bd69d2448987ea0d0584bd625b558ac8aa"
+  version "0.4.1"
+  sha256 "b817e78e42f5b15e94dadb09d151d8ffa43d17be131b2e12c4f88aabfd3e1526"
 
   url "https://github.com/Enzoding/notype/releases/download/v#{version}/Notype-#{version}.dmg"
   name "Notype"

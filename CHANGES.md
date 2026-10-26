@@ -4,6 +4,17 @@
 
 ---
 
+## [0.4.1] - 2026-10-26
+
+### 新增功能 (Features)
+- Apple 官方公证与开发者证书签名自动化：
+  - 打包脚本升级支持自动读取本地 `Developer ID Application` 证书，为内部二进制、App Bundle 及 DMG 镜像打上安全时间戳与 Hardened Runtime。
+  - 新增 `entitlements.plist`，声明强化运行时麦克风与辅助功能权限。
+  - 新增 `scripts/notarize.sh`，实现一键提交 Apple 云端公证并装订（Staple）官方票据，彻底消除 macOS 恶意软件拦截弹窗。
+- 一键分发基础设施：
+  - 新增 `scripts/install.sh` 终端一键静默安装脚本（自动下载、部署并解除安全隔离）。
+  - 新增 `Casks/notype.rb` Homebrew Cask 官方规范配方。
+
 ## [0.4.0] - 2026-10-26
 
 ### 新增功能 (Features)

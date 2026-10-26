@@ -124,8 +124,9 @@ else
     SIGN_ARGS=()
 fi
 
-echo "==> Code signing the .app bundle..."
-codesign --force --deep "${SIGN_ARGS[@]}" --sign "${SIGN_IDENTITY}" "${APP_BUNDLE}"
+echo "==> Code signing the inner binary and .app bundle..."
+codesign --force "${SIGN_ARGS[@]}" --sign "${SIGN_IDENTITY}" "${APP_BUNDLE}/Contents/MacOS/${BIN_NAME}"
+codesign --force "${SIGN_ARGS[@]}" --sign "${SIGN_IDENTITY}" "${APP_BUNDLE}"
 
 echo "==> Creating macOS DMG installer package..."
 DMG_ROOT="${RELEASE_DIR}/dmg_staging"
