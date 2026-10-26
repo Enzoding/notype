@@ -112,8 +112,20 @@ plutil -lint "${APP_BUNDLE}/Contents/Resources/en.lproj/InfoPlist.strings"
 plutil -lint "${APP_BUNDLE}/Contents/Resources/zh-Hans.lproj/InfoPlist.strings"
 plutil -lint "${APP_BUNDLE}/Contents/Resources/zh_CN.lproj/InfoPlist.strings"
 
-echo "==> Ad-hoc code signing the .app bundle..."
-codesign --force --deep --sign - "${APP_BUNDLE}"
+# Code Signing Identity
+SIGN_IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning | grep "Developer ID Application:" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)}"
+
+if [ -n "${SIGN_IDENTITY}" ]; then
+    echo "==> Using Apple Developer ID certificate: ${SIGN_IDENTITY}"
+    SIGN_ARGS=(--options runtime --timestamp --entitlements "${ROOT_DIR}/entitlements.plist")
+else
+    echo "==> No Developer ID certificate found; using ad-hoc signature (-)..."
+    SIGN_IDENTITY="-"
+    SIGN_ARGS=()
+fi
+
+echo "==> Code signing the .app bundle..."
+codesign --force --deep "${SIGN_ARGS[@]}" --sign "${SIGN_IDENTITY}" "${APP_BUNDLE}"
 
 echo "==> Creating macOS DMG installer package..."
 DMG_ROOT="${RELEASE_DIR}/dmg_staging"
@@ -134,6 +146,11 @@ rm -rf "${DMG_ROOT}"
 
 # Also make a friendly generic symlink release/Notype.dmg
 ln -sf "${DMG_NAME}" "${RELEASE_DIR}/${APP_NAME}.dmg"
+
+if [ "${SIGN_IDENTITY}" != "-" ]; then
+    echo "==> Code signing the DMG installer package..."
+    codesign --force --sign "${SIGN_IDENTITY}" --timestamp "${DMG_PATH}"
+fi
 
 echo "==> Packaging complete!"
 echo "    App bundle: ${APP_BUNDLE}"
