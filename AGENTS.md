@@ -51,6 +51,8 @@ Notype runs at native 60~120Hz display refresh rates on macOS. Uphold these stri
 
 Use standard rustfmt formatting with four-space indentation. Use `snake_case` for modules, functions, and variables; `PascalCase` for types; and `SCREAMING_SNAKE_CASE` for constants. Keep macOS FFI isolated in platform modules and document unsafe assumptions. Add new user-visible copy to both `locales/en.json` and `locales/zh-Hans.json`, keeping English in idiomatic macOS editorial style and preserving Chinese interface conventions. Run blocking network and expensive work through background execution so the UI remains responsive.
 
+Before adding complexity for a speculative or vanishingly unlikely race or security edge case, explain the concrete failure mode, likelihood, and complexity cost to the user and get their buy-in. Do not silently expand scope for theoretical robustness.
+
 ## Testing Guidelines
 
 Use Rust's built-in `#[test]` framework inside `#[cfg(test)] mod tests`. Name tests after observable behavior, such as `learns_term_and_correction_from_edit`. Use in-memory SQLite for storage tests. No coverage threshold is configured. Manually verify microphone permissions, global shortcuts, clipboard insertion, and UI changes; unit tests do not exercise these system flows.
