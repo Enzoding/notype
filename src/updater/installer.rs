@@ -56,6 +56,7 @@ fi
 
 echo "Replacing $TARGET_APP..."
 if rm -rf "$TARGET_APP" 2>/dev/null && cp -R "$SOURCE_APP" "$TARGET_APP" 2>/dev/null; then
+    xattr -cr "$TARGET_APP" 2>/dev/null || true
     echo "App replaced successfully."
 else
     echo "Warning: Direct replacement failed, falling back to opening DMG..."

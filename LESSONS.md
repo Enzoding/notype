@@ -85,3 +85,19 @@
 - **问题现象**：系统已列出麦克风，但应用尚未获准录音；用设备枚举结果判断授权会错误显示已就绪。
 - **根本原因**：CoreAudio 设备枚举不是 TCC 授权查询，找到设备并不能证明应用具有麦克风访问权限。
 - **防范与解决方案**：独立使用 AVFoundation authorizationStatusForMediaType 查询音频授权，仅 Authorized 视为完成；NotDetermined、Denied、Restricted 都不能显示 OK。授权操作只在用户主动点击时触发。状态定期缓存供 UI 读取，不在滚动渲染期间执行系统查询。
+
+---
+
+## 9. macOS Gatekeeper 隔离属性与未公证应用运行拦截
+
+- **问题现象**：
+  从 GitHub Releases 或浏览器下载 DMG 安装包并拖入 `/Applications` 后，双击启动弹出错误对话框：`Apple无法验证“Notype.app”是否包含可能危害Mac安全或泄漏隐私的恶意软件`（或提示应用无法打开）。
+- **根本原因**：
+  macOS 系统的 Gatekeeper 安全机制对于从网络下载的文件会自动附加 `com.apple.quarantine` 扩展属性。开源个人项目未购买 Apple Developer 开发者账号证书（$99/年）并进行苹果官方云端公证（Notarization），macOS 在双击时会触发默认安全拦截。
+- **防范与解决方案**：
+  1. **用户端首次放行（任选其一）**：
+     - **方案一（系统设置）**：打开「系统设置」→「隐私与安全性」，滚动到「安全性」，点击「仍要打开」。
+     - **方案二（访达右键）**：在访达中右键（或 Control + 单击）应用，选择「打开」，在弹出的对话框中点击「打开」。
+     - **方案三（终端命令）**：终端执行 `xattr -cr /Applications/Notype.app` 彻底清除隔离标记。
+  2. **应用内自动更新适配**：
+     - 在应用内自动更新脚本中，替换完 `.app` 包后主动执行 `xattr -cr "$TARGET_APP" 2>/dev/null || true`，避免应用内更新后再遭遇 Gatekeeper 二次拦截。
