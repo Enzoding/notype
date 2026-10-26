@@ -1007,41 +1007,67 @@ impl Store {
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
+}
 
+fn char_typing_seconds(c: char) -> f64 {
+    if c.is_ascii_alphanumeric() {
+        0.3 // ~200 chars/min (typical 40 wpm English typing)
+    } else if c.is_whitespace() || c.is_ascii_punctuation() {
+        0.15
+    } else if ('\u{4e00}'..='\u{9fff}').contains(&c)
+        || ('\u{3400}'..='\u{4dbf}').contains(&c)
+        || ('\u{f900}'..='\u{faff}').contains(&c)
+        || ('\u{3040}'..='\u{30ff}').contains(&c)
+        || ('\u{ac00}'..='\u{d7af}').contains(&c)
+    {
+        1.0 // ~60 chars/min (typical Chinese/CJK Pinyin composition)
+    } else {
+        0.5
+    }
+}
+
+impl Store {
     pub fn stats(&self) -> StatsSummary {
         let items = self.history().unwrap_or_default();
-        let total_sessions = items.len();
+        let valid_items: Vec<_> = items
+            .into_iter()
+            .filter(|i| !i.display_text().trim().is_empty())
+            .collect();
+        let total_sessions = valid_items.len();
         let mut total_chars = 0usize;
         let mut total_duration_ms = 0i64;
         let mut timed_chars = 0usize;
         let mut timed_ms = 0i64;
+        let mut typing_seconds = 0.0f64;
 
-        for item in &items {
-            let chars = item.char_count();
+        for item in &valid_items {
+            let text = item.display_text().trim();
+            let chars = text.chars().count();
             total_chars += chars;
+
+            for c in text.chars() {
+                typing_seconds += char_typing_seconds(c);
+            }
+
             if item.duration_ms > 0 {
                 total_duration_ms += item.duration_ms;
                 timed_chars += chars;
                 timed_ms += item.duration_ms;
-            } else {
-                // Estimate ~3.5 chars per second for legacy entries without duration_ms
-                let estimated_ms = ((chars as f32 / 3.5) * 1000.0) as i64;
-                total_duration_ms += estimated_ms;
             }
         }
 
-        let avg_cpm = if timed_ms > 1000 {
+        let avg_cpm = if timed_ms >= 1000 && timed_chars > 0 {
             ((timed_chars as f64) / (timed_ms as f64 / 60_000.0)).round() as usize
-        } else if total_duration_ms > 1000 {
-            ((total_chars as f64) / (total_duration_ms as f64 / 60_000.0)).round() as usize
         } else {
             0
         };
 
-        // Typical manual typing + editing speed on mixed CJK/English is ~45 chars/min
-        let typing_minutes = total_chars as f32 / 45.0;
-        let speaking_minutes = total_duration_ms as f32 / 60_000.0;
-        let saved_minutes = (typing_minutes - speaking_minutes).max(0.0);
+        let speaking_seconds = total_duration_ms as f64 / 1000.0;
+        let saved_minutes = if total_duration_ms > 0 {
+            ((typing_seconds - speaking_seconds) / 60.0).max(0.0) as f32
+        } else {
+            0.0
+        };
 
         StatsSummary {
             total_sessions,
@@ -1199,5 +1225,29 @@ mod tests {
         let dir = Store::audio_dir().unwrap();
         assert!(dir.ends_with("audio"));
         let _ = Store::existing_audio_ids();
+    }
+    #[test]
+    fn stats_summary_computes_accurately_from_real_history() {
+        let store = Store::open_in_memory().unwrap();
+        // 1. Chinese dictation: 10 chars, 2000ms duration
+        store
+            .add_history("com.apple.Notes", "测试中文语音听写功能", "", 2000, "fast")
+            .unwrap();
+        // 2. English dictation: 21 chars, 3000ms duration
+        store
+            .add_history("com.apple.Notes", "Hello world from Rust", "", 3000, "fast")
+            .unwrap();
+        // 3. Empty synthetic entry
+        store
+            .add_history("com.apple.Notes", "   ", "", 1000, "fast")
+            .unwrap();
+
+        let s = store.stats();
+        assert_eq!(s.total_sessions, 2);
+        assert_eq!(s.total_chars, 10 + 21);
+        assert_eq!(s.total_duration_ms, 5000);
+        // (10 + 21) chars / (5000ms / 60000ms) = 31 / (5/60) = 31 * 12 = 372 CPM
+        assert_eq!(s.avg_cpm, 372);
+        assert!(s.saved_minutes > 0.0);
     }
 }

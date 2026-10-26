@@ -28,15 +28,81 @@ fn check_cancelled() -> Result<(), String> {
     }
 }
 
+struct ClientCache {
+    proxy: Option<String>,
+    checked_at: std::time::Instant,
+    client: reqwest::blocking::Client,
+}
+
+static SHARED_CLIENT: std::sync::Mutex<Option<ClientCache>> = std::sync::Mutex::new(None);
+
+pub fn prewarm_connection(base_url: &str, key: &str) {
+    let base = base_url.trim().trim_end_matches('/');
+    if base.is_empty() || !base.starts_with("http") {
+        return;
+    }
+    let url = format!("{base}/v1/models");
+    let key = key.to_string();
+    std::thread::spawn(move || {
+        if let Ok(c) = client() {
+            let mut req = c.get(&url).timeout(std::time::Duration::from_secs(3));
+            if !key.is_empty() {
+                req = req.bearer_auth(&key);
+            }
+            let _ = req.send();
+        }
+    });
+}
+
+fn current_effective_proxy() -> Option<String> {
+    for var in ["https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"] {
+        if let Ok(val) = std::env::var(var) {
+            if !val.trim().is_empty() {
+                return Some(val);
+            }
+        }
+    }
+    detect_macos_system_proxy()
+}
+
 pub(super) fn client() -> Result<reqwest::blocking::Client, String> {
+    let mut guard = SHARED_CLIENT.lock().map_err(|_| "客户端锁异常")?;
+    let now = std::time::Instant::now();
+    if let Some(ref mut cache) = *guard {
+        if now.duration_since(cache.checked_at) < std::time::Duration::from_secs(30) {
+            return Ok(cache.client.clone());
+        }
+        let current_proxy = current_effective_proxy();
+        if current_proxy == cache.proxy {
+            cache.checked_at = now;
+            return Ok(cache.client.clone());
+        }
+    }
+
+    let proxy = current_effective_proxy();
     let mut builder = reqwest::blocking::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(90))
+        .pool_idle_timeout(std::time::Duration::from_secs(120))
         .redirect(reqwest::redirect::Policy::none());
-    builder = configure_proxy(builder);
-    builder
+
+    if let Some(ref proxy_url) = proxy {
+        if let Ok(p) = reqwest::Proxy::all(proxy_url) {
+            builder = builder.proxy(p);
+        }
+    }
+
+    let built = builder
         .build()
-        .map_err(|_| "无法创建网络客户端，请检查代理配置".to_string())
+        .map_err(|_| "无法创建网络客户端，请检查代理配置".to_string())?;
+
+    *guard = Some(ClientCache {
+        proxy,
+        checked_at: now,
+        client: built.clone(),
+    });
+
+    Ok(built)
 }
 
 pub(crate) fn configure_proxy(
@@ -274,5 +340,19 @@ mod tests {
             parse_scutil_proxy("HTTPSEnable : 1\nHTTPSProxy : 127.0.0.1\nHTTPSPort : 7890"),
             Some("http://127.0.0.1:7890".into())
         );
+    }
+
+    #[test]
+    fn shared_client_reuses_instance() {
+        let c1 = client().unwrap();
+        let c2 = client().unwrap();
+        assert!(format!("{:?}", c1).contains("Client"));
+        assert!(format!("{:?}", c2).contains("Client"));
+    }
+
+    #[test]
+    fn prewarm_ignores_empty_or_invalid_endpoint() {
+        prewarm_connection("", "");
+        prewarm_connection("ftp://invalid", "");
     }
 }

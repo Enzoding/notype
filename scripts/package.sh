@@ -124,9 +124,21 @@ else
     SIGN_ARGS=()
 fi
 
+sign_with_fallback() {
+    local target="$1"
+    if ! codesign --force "${SIGN_ARGS[@]}" --sign "${SIGN_IDENTITY}" "${target}"; then
+        echo "==> Timestamp service unavailable or failed, retrying without timestamp..."
+        if [ "${SIGN_IDENTITY}" != "-" ]; then
+            codesign --force --options runtime --entitlements "${ROOT_DIR}/entitlements.plist" --sign "${SIGN_IDENTITY}" "${target}" || codesign --force --sign - "${target}"
+        else
+            codesign --force --sign - "${target}"
+        fi
+    fi
+}
+
 echo "==> Code signing the inner binary and .app bundle..."
-codesign --force "${SIGN_ARGS[@]}" --sign "${SIGN_IDENTITY}" "${APP_BUNDLE}/Contents/MacOS/${BIN_NAME}"
-codesign --force "${SIGN_ARGS[@]}" --sign "${SIGN_IDENTITY}" "${APP_BUNDLE}"
+sign_with_fallback "${APP_BUNDLE}/Contents/MacOS/${BIN_NAME}"
+sign_with_fallback "${APP_BUNDLE}"
 
 echo "==> Creating macOS DMG installer package..."
 DMG_ROOT="${RELEASE_DIR}/dmg_staging"
@@ -150,7 +162,7 @@ ln -sf "${DMG_NAME}" "${RELEASE_DIR}/${APP_NAME}.dmg"
 
 if [ "${SIGN_IDENTITY}" != "-" ]; then
     echo "==> Code signing the DMG installer package..."
-    codesign --force --sign "${SIGN_IDENTITY}" --timestamp "${DMG_PATH}"
+    codesign --force --sign "${SIGN_IDENTITY}" --timestamp "${DMG_PATH}" || codesign --force --sign "${SIGN_IDENTITY}" "${DMG_PATH}" || true
 fi
 
 echo "==> Packaging complete!"

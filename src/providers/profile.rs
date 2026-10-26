@@ -56,20 +56,11 @@ impl Profile {
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| fallback.into())
         };
-        if kind == ProviderKind::Vercel {
-            Self {
-                kind,
-                base_url: kind.base().to_string(),
-                transcribe_model: get("transcribe", &store.transcribe_model()),
-                polish_model: get("polish", &store.polish_model()),
-            }
-        } else {
-            Self {
-                kind,
-                base_url: kind.base().to_string(),
-                transcribe_model: get("transcribe", "openai/whisper-large-v3"),
-                polish_model: get("polish", "openai/gpt-4o-mini"),
-            }
+        Self {
+            kind,
+            base_url: kind.base().to_string(),
+            transcribe_model: get("transcribe", &store.transcribe_model()),
+            polish_model: get("polish", &store.polish_model()),
         }
     }
     pub fn save(&self, store: &Store) -> Result<(), String> {

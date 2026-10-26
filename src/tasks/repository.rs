@@ -63,6 +63,7 @@ impl Task {
             polished: String::new(),
             polish_parts: Vec::new(),
             history_id: None,
+            timings: crate::tasks::model::TaskTimings::default(),
         };
         fs::create_dir(task.dir()?).map_err(|_| "无法创建录音任务")?;
         fs::set_permissions(task.dir()?, fs::Permissions::from_mode(0o700))
@@ -267,6 +268,7 @@ pub(super) mod tests {
             polished: String::new(),
             polish_parts: Vec::new(),
             history_id: None,
+            timings: crate::tasks::model::TaskTimings::default(),
         };
         task.save().unwrap();
         task

@@ -10,7 +10,6 @@ use std::time::Duration;
 
 use gpui_kit::assets::IconName as LucideIcon;
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
-use gpui_kit::component::Icon;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, rems, Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
@@ -84,6 +83,8 @@ pub struct SettingsView {
     pub history_page: usize,
     pub history_page_size: usize,
     pub dict_display_limit: usize,
+    pub(crate) show_custom_models: bool,
+    pub(crate) focus_handle: gpui_kit::FocusHandle,
 }
 
 impl SettingsView {
@@ -102,6 +103,7 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> Self {
         let key_editing = session.read(cx).connections.key.is_empty();
+        let focus_handle = cx.focus_handle();
         cx.observe(&session, |_, _, cx| cx.notify()).detach();
         cx.subscribe(&key_input, |view, input, event, cx| {
             if matches!(event, InputEvent::PressEnter { .. }) {
@@ -165,6 +167,8 @@ impl SettingsView {
             history_page: 1,
             history_page_size: DEFAULT_HISTORY_PAGE_SIZE,
             dict_display_limit: DEFAULT_DICT_LIMIT,
+            show_custom_models: false,
+            focus_handle,
         }
     }
 
@@ -236,8 +240,14 @@ impl Render for SettingsView {
             hotkey_code,
             trigger_mode,
             studio_dictating,
+            readiness,
         ) = {
             let s = self.session.read(cx);
+            let readiness = crate::providers::SetupReadiness {
+                key_configured: !s.connections.provider_keys[s.connections.kind.index()].is_empty(),
+                microphone_granted: s.microphone_access.granted(),
+                accessibility_granted: s.accessibility_trusted,
+            };
             (
                 s.phase.clone(),
                 s.elapsed(),
@@ -247,6 +257,7 @@ impl Render for SettingsView {
                 s.hotkey_code,
                 s.trigger_mode,
                 s.studio_dictating,
+                readiness,
             )
         };
         let shown_phase = if studio_dictating {
@@ -267,6 +278,10 @@ impl Render for SettingsView {
 
         div()
             .id("workspace-root")
+            .track_focus(&self.focus_handle)
+            .on_action(|_: &crate::CloseWindow, _window, _| {
+                crate::overlay::hide_settings_window();
+            })
             .flex()
             .size_full()
             .bg(ui::canvas_bg(cx))
@@ -305,16 +320,11 @@ impl Render for SettingsView {
                                             .gap(px(9.0))
                                             .child(
                                                 div()
-                                                    .flex()
-                                                    .items_center()
-                                                    .justify_center()
                                                     .size(px(28.0))
-                                                    .rounded(px(8.0))
-                                                    .bg(ui::accent(cx))
+                                                    .rounded(px(7.0))
+                                                    .overflow_hidden()
                                                     .child(
-                                                        Icon::new(LucideIcon::AudioWaveform)
-                                                            .size(px(15.0))
-                                                            .text_color(ui::on_accent(cx)),
+                                                        gpui_kit::img("logo.png").size(px(28.0)),
                                                     ),
                                             )
                                             .child(
@@ -423,7 +433,7 @@ impl Render for SettingsView {
                             elapsed,
                             hotkey_code,
                             trigger_mode,
-                            has_key,
+                            readiness,
                             session_handle,
                             cx,
                         ),
@@ -466,7 +476,7 @@ impl Render for SettingsView {
                                             .child(active_tab.subtitle()),
                                     ),
                             )
-                            .child(status_pill(&shown_phase, elapsed, cx)),
+                            .child(status_pill(&shown_phase, elapsed, readiness, cx)),
                     )
                     .when(active_tab == NavTab::Settings, |col| {
                         col.child(self.settings_navigation(cx))

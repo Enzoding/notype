@@ -25,13 +25,17 @@ pub fn format_duration_ms(ms: i64) -> String {
     if ms <= 0 {
         return String::new();
     }
-    let secs = ms as f32 / 1000.0;
-    if secs < 60.0 {
-        format!("{secs:.1}s")
-    } else {
-        let m = (secs as u64) / 60;
-        let s = (secs as u64) % 60;
+    let total_secs = ms as f64 / 1000.0;
+    if total_secs < 60.0 {
+        format!("{total_secs:.1}s")
+    } else if total_secs < 3600.0 {
+        let m = (total_secs as u64) / 60;
+        let s = (total_secs as u64) % 60;
         format!("{m}m {s:02}s")
+    } else {
+        let h = (total_secs as u64) / 3600;
+        let m = ((total_secs as u64) % 3600) / 60;
+        format!("{h}h {m}m")
     }
 }
 

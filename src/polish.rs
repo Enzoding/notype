@@ -310,9 +310,76 @@ pub fn segments(text: &str) -> Vec<String> {
     parts
 }
 
+/// Local Stage 0 deterministic speech cleaning:
+/// 1. Collapses stuttering repetitions (e.g. "这个这个" -> "这个", "然后然后" -> "然后").
+/// 2. Cleans up oral fillers (e.g. "呃……", "嗯，").
+pub fn clean_speech(raw: &str) -> String {
+    let mut text = raw.trim().to_string();
+    if text.is_empty() {
+        return text;
+    }
+
+    let repeat_words = [
+        "我们我们",
+        "这个这个",
+        "那个那个",
+        "然后然后",
+        "就是就是",
+        "可以可以",
+    ];
+    for rep in repeat_words {
+        let single = &rep[..rep.len() / 2];
+        while text.contains(rep) {
+            text = text.replace(rep, single);
+        }
+    }
+
+    let fillers = [
+        "呃……",
+        "呃…",
+        "呃，",
+        "呃,",
+        "啊……",
+        "啊…",
+        "嗯……",
+        "嗯…",
+        "嗯，",
+        "嗯,",
+    ];
+    for filler in fillers {
+        text = text.replace(filler, "");
+    }
+
+    let leading = ["那个，", "那个,", "就是说，", "就是说,"];
+    for lead in leading {
+        if text.starts_with(lead) {
+            text = text[lead.len()..].to_string();
+        }
+    }
+
+    let mut cleaned = text.trim().to_string();
+    while cleaned.contains("，，") || cleaned.contains(",,") {
+        cleaned = cleaned.replace("，，", "，").replace(",,", ",");
+    }
+    if cleaned.starts_with('，') || cleaned.starts_with(',') {
+        cleaned = cleaned[1..].trim().to_string();
+    }
+    cleaned
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cleans_speech_self_repair_and_fillers() {
+        assert_eq!(clean_speech("呃，我想说这个这个事情"), "我想说这个事情");
+        assert_eq!(
+            clean_speech("就是说，我们我们然后然后去开会"),
+            "我们然后去开会"
+        );
+        assert_eq!(clean_speech("正常文字保持不变"), "正常文字保持不变");
+    }
 
     #[test]
     fn long_polish_segments_preserve_every_character() {

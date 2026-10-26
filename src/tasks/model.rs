@@ -111,6 +111,18 @@ pub struct TaskConfig {
     pub save_audio: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TaskTimings {
+    #[serde(default)]
+    pub asr_ms: u64,
+    #[serde(default)]
+    pub clean_ms: u64,
+    #[serde(default)]
+    pub polish_ms: u64,
+    #[serde(default)]
+    pub delivery_ms: u64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Task {
     #[serde(skip)]
@@ -131,6 +143,8 @@ pub struct Task {
     #[serde(default)]
     pub polish_parts: Vec<String>,
     pub history_id: Option<i64>,
+    #[serde(default)]
+    pub timings: TaskTimings,
 }
 
 #[derive(Clone, Debug)]

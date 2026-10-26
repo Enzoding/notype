@@ -106,4 +106,40 @@
 
 - **问题现象**：2026-10-26 项目约 11 GiB，开发产物约 9.5 GiB，其中增量缓存约 3 GiB，发布产物约 1.7 GiB；源码与资源不足 10 MiB。
 - **根本原因**：开发默认完整调试信息与增量缓存较大；不同构建指纹的产物可并存。仅调整配置不会删除旧产物，发布二进制 strip 也不能缩小开发缓存。
-- **防范与解决方案**：dev（及继承它的 test）使用行号调试信息并关闭增量编译，接受重编译速度与变量调试能力的取舍。配置切换后显式清理旧 target，再测量 build/test/clippy 后占用；使用项目脚本检查 4 GiB 维护预算，超限时先诊断再显式清理。不要自动删除共享 Cargo 缓存或用户录音/数据库，也不要在运行中的编译期间清理。
+- **防范与解决方案**：dev（及继承它的 test）使用行号调试信息并关闭增量编译，接受重编译速度与变量调试能力的取舍。配置切换后显式清理旧 target，再测量 build/test/clippy 后占用；使用项目脚本检查 4 GiB 预算，超限时先诊断再显式清理。不要自动删除共享 Cargo 缓存或用户录音/数据库，也不要在运行中的编译期间清理。
+
+---
+
+## 11. HTTP Client 每次新建导致连接池失效与粘贴前 I/O 阻塞上屏
+
+- **问题现象**：
+  对比 TypeLess 等产品，每次长按快捷键说话后松手，需等待较长时间才出字，体感慢；且偶尔遇到转写超时或延迟陡增。
+- **根本原因**：
+  1. `providers/transport.rs` 的 `client()` 在每次调用时都执行 `Client::builder().build()`。reqwest 每个 Client 拥有独立连接池，丢弃 Client 即关闭连接池。导致转写（STT）和润色（Chat）两次调用每次都要走一遍代理 CONNECT 和 TLS 握手（实测每次握手约 0.48~0.53s，每次听写硬性浪费约 1.0s）。
+  2. 交付时序阻塞：Pipeline 推理完毕后，把整段音频重采样拼装 WAV、写磁盘文件、写 SQLite 历史并重新查询 100 条历史全部放在了 UI 模拟按键粘贴之前，录音越长本地磁盘 I/O 越重。
+  3. 转写热词列表多达 120 个，一旦触发云端 400 就会降级重试并重新上传整段未压缩音频，且没有记忆安全容量，下次听写继续碰壁。
+- **防范与解决方案**：
+  1. 使用带 TTL 探测的全局长寿命客户端缓存，在代理配置稳定时复用底层 TCP/TLS 连接池；录音开始（`Session::begin`）即在后台触发无害预热（`prewarm_connection`），把首次 TLS 握手隐藏在说话过程中。
+  2. 交付时序重构为两阶段：文本推理就绪后第一时间直接粘贴交付给用户，耗时的 WAV 拼装与 SQLite 归档转为后台静默异步进行。
+  3. 热词默认初次上限收窄到 25 个并加入 `MAX_SAFE_PHRASES` 缓存，避免多轮音频重发。
+  4. 引入本地确定性 Stage 0 口语清洗，先行剔除口语重复词和语气填充词，减少送给 LLM 的噪音 token 数量，提高生成效率。
+
+---
+
+## 12. GPUI 静态资源嵌入与 macOS 原生窗口快捷键规范
+
+- **问题现象**：
+  1. 界面中缺失原生应用 Logo 或试图在渲染循环中直接读取本地图片；
+  2. macOS 用户习惯的快捷键（如 `⌘W` 关闭当前窗口、`⌘Q` 退出应用）无任何响应；
+  3. `⌘W` 关闭窗口后，点击 Dock 栏图标无法重新唤起工作台窗口。
+- **根本原因**：
+  1. GPUI 严格遵循 Render Purity 规范（60~120Hz 刷新率），禁止在 `render` 函数内执行任何同步文件系统 I/O（`is_file`、`fs::read` 等）。如果直接按相对路径读文件，在打包为独立 `.app` 时也会因工作目录变化而无法加载。
+  2. GPUI 默认不预置系统快捷键，必须通过 `actions!` 宏声明动作，并通过 `cx.bind_keys` 和 `cx.set_menus` 显式注册按键派发映射。
+  3. **Dock 唤醒失效的深层原因**：应用为了浮动录音胶囊常驻打开了 `Notype Voice` 透明无边框窗口。macOS 点击 Dock 时调用 `applicationShouldHandleReopen:hasVisibleWindows:`，传参 `hasVisibleWindows = true`。而 GPUI 的 macOS 平台实现硬编码了 `if !has_open_windows { callback(); }`，导致 GPUI 内部的 `on_reopen` 永远不会被触发！
+- **防范与解决方案**：
+  1. 封装实现 `gpui_kit::AssetSource`（如 `AppAssets`），在编译期通过 `include_bytes!` 安全嵌入核心静态资源，配合 `gpui_kit::img` 实现纯内存高性能解码与渲染。
+  2. 窗口隐藏与恢复策略：`⌘W` 调用 `overlay::hide_settings_window()`（`NSWindow orderOut:`）实现无损隐藏，保留全部输入与视图状态。
+  3. **跨过 GPUI 局限的 Dock 唤醒三保险**：
+     - 使用 `AEInstallEventHandler` 直接挂载 Apple Event `kCoreEventClass, kAEReopenApplication`（`'aevt'/'rapp'`），无论是否存在其他浮动窗口，点击 Dock 必触发。
+     - 在事件轮询中监听 `NSApplication.isActive` 激活转换，当应用被激活且工作台未处于可见状态时主动唤起。
+     - `reveal_settings` 优先调用 `orderFrontRegardless` 恢复现有窗口，若已被操作系统物理销毁则无缝回退新建。

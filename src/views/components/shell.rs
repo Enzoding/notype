@@ -86,7 +86,7 @@ pub fn sidebar_status_card(
     elapsed: Duration,
     hotkey_code: i64,
     trigger_mode: TriggerMode,
-    has_key: bool,
+    readiness: crate::providers::SetupReadiness,
     session: Entity<Session>,
     cx: &App,
 ) -> impl IntoElement {
@@ -114,7 +114,7 @@ pub fn sidebar_status_card(
                         .gap(px(6.0))
                         .child(div().size(px(6.5)).rounded_full().bg(if is_rec {
                             ui::live(cx)
-                        } else if has_key {
+                        } else if readiness.ready() {
                             ui::ok(cx)
                         } else {
                             ui::warn(cx)
@@ -128,10 +128,12 @@ pub fn sidebar_status_card(
                                         "shell.recording",
                                         &[("time", &mmss(elapsed))],
                                     )
-                                } else if has_key {
+                                } else if readiness.ready() {
                                     crate::i18n::t("shell.ready_to_dictate").into()
-                                } else {
+                                } else if !readiness.key_configured {
                                     crate::i18n::t("shell.no_api_key").into()
+                                } else {
+                                    crate::i18n::t("shell.status_missing_perms").into()
                                 }),
                         ),
                 )
@@ -168,9 +170,33 @@ pub fn sidebar_status_card(
         ))
 }
 
-pub fn status_pill(phase: &Phase, elapsed: Duration, cx: &App) -> impl IntoElement {
+pub fn status_pill(
+    phase: &Phase,
+    elapsed: Duration,
+    readiness: crate::providers::SetupReadiness,
+    cx: &App,
+) -> impl IntoElement {
     let (color, label) = match phase {
-        Phase::Idle => (ui::ok(cx), crate::i18n::t("shell.status_ready").to_string()),
+        Phase::Idle => {
+            if readiness.ready() {
+                (ui::ok(cx), crate::i18n::t("shell.status_ready").to_string())
+            } else if !readiness.key_configured && !readiness.permissions_ready() {
+                (
+                    ui::warn(cx),
+                    crate::i18n::t("shell.status_not_ready").to_string(),
+                )
+            } else if !readiness.key_configured {
+                (
+                    ui::warn(cx),
+                    crate::i18n::t("shell.status_missing_key").to_string(),
+                )
+            } else {
+                (
+                    ui::warn(cx),
+                    crate::i18n::t("shell.status_missing_perms").to_string(),
+                )
+            }
+        }
         Phase::Listening => (
             ui::live(cx),
             crate::i18n::t_args("shell.status_listening", &[("time", &mmss(elapsed))]),

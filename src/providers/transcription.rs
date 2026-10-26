@@ -1,6 +1,8 @@
 use super::transport::{client, error_message, send_with_retry};
 use super::{api_base, transcribe_url, ProviderKind, TRANSCRIBE_MODEL};
 
+static MAX_SAFE_PHRASES: std::sync::Mutex<Option<usize>> = std::sync::Mutex::new(None);
+
 pub fn transcribe_with_model(
     kind: ProviderKind,
     base_url: &str,
@@ -15,11 +17,7 @@ pub fn transcribe_with_model(
         base_url
     })?;
     let model = if model.trim().is_empty() {
-        if kind == ProviderKind::OpenRouter {
-            "openai/whisper-large-v3"
-        } else {
-            TRANSCRIBE_MODEL
-        }
+        TRANSCRIBE_MODEL
     } else {
         model.trim()
     };
@@ -40,14 +38,10 @@ pub fn transcribe_with_model(
     }
     let url = transcribe_url(base_url);
     // Azure accepts a phrase list, but a very long list can be rejected (or
-    // degrade quality). If the request fails with a client error, step down to
-    // smaller lists instead of dropping the whole dictionary on the floor.
-    let mut caps = vec![
-        phrases.len().min(crate::mining::ACTIVE_PHRASE_LIMIT),
-        50,
-        20,
-        0,
-    ];
+    // degrade quality). Step down safely and cache the safe capacity.
+    let safe_limit = MAX_SAFE_PHRASES.lock().ok().and_then(|g| *g).unwrap_or(25);
+    let initial_cap = phrases.len().min(safe_limit);
+    let mut caps = vec![initial_cap, 10, 0];
     let mut seen = std::collections::HashSet::new();
     caps.retain(|cap| (*cap == 0 || *cap <= phrases.len()) && seen.insert(*cap));
     let mut last_error = None;
@@ -60,13 +54,22 @@ pub fn transcribe_with_model(
         let response = send_transcribe(&client, &url, key, model, body)?;
         let status = response.status();
         if status.is_success() {
+            if let Ok(mut guard) = MAX_SAFE_PHRASES.lock() {
+                if guard.is_none() || guard.is_some_and(|g| g < cap) {
+                    *guard = Some(cap.max(25));
+                }
+            }
             return transcript_text(&response.text().unwrap_or_default());
         }
         let text = response.text().unwrap_or_default();
         last_error = Some(error_message(status, &text));
         let retryable = status == reqwest::StatusCode::BAD_REQUEST
             || status == reqwest::StatusCode::UNPROCESSABLE_ENTITY;
-        if !retryable {
+        if retryable {
+            if let Ok(mut guard) = MAX_SAFE_PHRASES.lock() {
+                *guard = Some(cap.saturating_sub(1));
+            }
+        } else {
             break;
         }
     }

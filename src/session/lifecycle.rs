@@ -161,6 +161,9 @@ impl Session {
                 if self.sound_feedback {
                     audio::play_cue(SoundCue::Start);
                 }
+                let prewarm_base = self.profile(self.connections.kind).base_url;
+                let prewarm_key = self.provider_key(self.connections.kind);
+                crate::providers::prewarm_connection(&prewarm_base, &prewarm_key);
                 cx.spawn(async move |this, cx| {
                     cx.background_executor()
                         .timer(Duration::from_secs(tasks::MAX_RECORDING_SECS))
@@ -242,12 +245,14 @@ impl Session {
         self.sync_voice(cx);
         cx.notify();
         let is_recovery = recovered.is_some();
+        let store_pipeline = store.clone();
         cx.spawn(async move |this, cx| {
-            let result = cx
+            // Stage 1: Run pipeline (ASR + Polish)
+            let pipeline_result = cx
                 .background_executor()
                 .spawn(async move {
                     let (phrases, corrections) = {
-                        let db = store.lock().map_err(|_| "历史数据库忙碌")?;
+                        let db = store_pipeline.lock().map_err(|_| "历史数据库忙碌")?;
                         (db.phrase_list(), db.corrections())
                     };
                     let mut task = if let Some(id) = recovered {
@@ -310,43 +315,13 @@ impl Session {
                     if cancelled.load(Ordering::Acquire) {
                         return Err("已取消".into());
                     }
-                    let wav = if task.config.save_audio {
-                        Some(task.wav()?)
-                    } else {
-                        None
-                    };
-                    let store = store.lock().map_err(|_| "历史数据库忙碌")?;
-                    let id = store
-                        .save_task_history(&task)
-                        .map_err(|_| "历史保存失败，任务仍可恢复")?;
-                    task.history_id = Some(id);
-                    let has_audio = if let Some(wav) = wav {
-                        store
-                            .save_audio_file(id, &wav)
-                            .map_err(|_| "录音归档失败，恢复缓存仍保留")?;
-                        true
-                    } else {
-                        false
-                    };
-                    if cancelled.load(Ordering::Acquire) {
-                        task.phase = crate::tasks::TaskPhase::Cancelled;
-                        task.save()?;
-                        return Err("已取消".into());
-                    }
                     let _ = sender.send(Stage::Insert);
-                    let history = store.history().map_err(|_| "无法刷新历史")?;
-                    let stats = store.stats();
-                    drop(store);
-                    if task.error.is_empty() {
-                        task.phase = crate::tasks::TaskPhase::Completed;
-                    }
-                    task.save()?;
-                    if task.error.is_empty() {
-                        task.remove()?;
-                    }
-                    Ok((task, id, has_audio, history, stats))
+                    Ok(task)
                 })
                 .await;
+
+            // Deliver immediately: insert text on UI thread without waiting for audio archival or SQLite queries
+            let mut delivery = None;
             let _ = this.update(cx, |s, cx| {
                 if s.generation != generation || !matches!(s.phase, Phase::Working(_)) {
                     s.refresh_recovery(cx);
@@ -356,22 +331,18 @@ impl Session {
                 s.active_task = None;
                 s.stages = None;
                 s.working_progress = 1.0;
-                match result {
+                match pipeline_result {
                     Err(err) => s.note(Notice::Error(err), cx),
-                    Ok((task, id, has_audio, history, stats)) => {
-                        s.history = history;
-                        s.stats = stats;
-                        if has_audio {
-                            s.audio_ids.insert(id);
-                        }
-                        let text = if task.polished.is_empty() {
-                            task.corrected.clone()
+                    Ok(t) => {
+                        let text = if t.polished.is_empty() {
+                            t.corrected.clone()
                         } else {
-                            task.polished.clone()
+                            t.polished.clone()
                         };
+                        let mut pasted = false;
                         if is_recovery || for_studio {
-                            s.studio_raw = task.transcript;
-                            s.studio_output = text;
+                            s.studio_raw = t.transcript.clone();
+                            s.studio_output = text.clone();
                             s.note(
                                 Notice::Done(
                                     "内容已保存到历史，可复制；恢复任务不会自动粘贴".into(),
@@ -390,9 +361,9 @@ impl Session {
                                 .detach();
                             }
                             if matches!(inserted, InsertResult::Pasted) {
-                                s.watch_paste_correction(id, text, cx);
+                                pasted = true;
                             }
-                            let notice = if !task.error.is_empty() {
+                            let notice = if !t.error.is_empty() {
                                 Notice::Warn("润色失败，已使用转写原文；可在设置中重试润色".into())
                             } else if matches!(inserted, InsertResult::Pasted) {
                                 Notice::Done("已贴入并保存".into())
@@ -401,8 +372,63 @@ impl Session {
                             };
                             s.note(notice, cx);
                         }
-                        s.maybe_mine(cx);
+                        delivery = Some((t, text, pasted));
                     }
+                }
+                s.refresh_recovery(cx);
+            });
+
+            let Some((mut task, text, pasted)) = delivery else {
+                return;
+            };
+
+            // Stage 2: Background archive & persistence (WAV file write + SQLite insert)
+            let store_clone = store.clone();
+            let archive_result: Result<(i64, bool, _, _), String> = cx
+                .background_executor()
+                .spawn(async move {
+                    let wav = if task.config.save_audio {
+                        Some(task.wav()?)
+                    } else {
+                        None
+                    };
+                    let db = store_clone.lock().map_err(|_| "历史数据库忙碌")?;
+                    let id = db
+                        .save_task_history(&task)
+                        .map_err(|_| "历史保存失败，任务仍可恢复")?;
+                    task.history_id = Some(id);
+                    let has_audio = if let Some(wav) = wav {
+                        db.save_audio_file(id, &wav)
+                            .map_err(|_| "录音归档失败，恢复缓存仍保留")?;
+                        true
+                    } else {
+                        false
+                    };
+                    let history = db.history().map_err(|_| "无法刷新历史")?;
+                    let stats = db.stats();
+                    drop(db);
+                    if task.error.is_empty() {
+                        task.phase = crate::tasks::TaskPhase::Completed;
+                    }
+                    task.save()?;
+                    if task.error.is_empty() {
+                        task.remove()?;
+                    }
+                    Ok((id, has_audio, history, stats))
+                })
+                .await;
+
+            let _ = this.update(cx, |s, cx| {
+                if let Ok((id, has_audio, history, stats)) = archive_result {
+                    s.history = history;
+                    s.stats = stats;
+                    if has_audio {
+                        s.audio_ids.insert(id);
+                    }
+                    if pasted {
+                        s.watch_paste_correction(id, text, cx);
+                    }
+                    s.maybe_mine(cx);
                 }
                 s.refresh_recovery(cx);
             });

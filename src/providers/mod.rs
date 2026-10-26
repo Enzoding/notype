@@ -14,6 +14,7 @@ pub use endpoint::{api_base, chat_url, mask_key, transcribe_url, validate_base};
 pub use profile::{active_provider, Profile, ProviderKind};
 pub use readiness::{ChannelChecks, SetupReadiness};
 pub use transcription::transcribe_with_model;
+pub use transport::prewarm_connection;
 pub(crate) use transport::CancellationScope;
 pub const DEFAULT_BASE_URL: &str = "https://ai-gateway.vercel.sh";
 pub const TRANSCRIBE_MODEL: &str = "microsoft/mai-transcribe-2";

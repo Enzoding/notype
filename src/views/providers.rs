@@ -83,28 +83,82 @@ impl SettingsView {
                     .text_color(ui::fg2(cx))
                     .child(key_status),
             );
-        for (is_trans, current, models, input, label, desc) in [
-            (
-                true,
-                tm,
-                trans_models,
-                self.transcribe_model_input.clone(),
-                crate::i18n::t("settings.channel.transcribe_model"),
-                crate::i18n::t("settings.channel.transcribe_model_desc"),
-            ),
-            (
-                false,
-                pm,
-                chat_models,
-                self.polish_model_input.clone(),
-                crate::i18n::t("settings.channel.polish_model"),
-                crate::i18n::t("settings.channel.polish_model_desc"),
-            ),
-        ] {
-            let save_input = input.clone();
-            let save_session = session.clone();
-            card =
-                card.child(
+
+        if !self.show_custom_models {
+            let toggle_view = view.clone();
+            card = card.child(
+                setting_row(
+                    crate::i18n::t("settings.channel.models_title"),
+                    crate::i18n::t("settings.channel.models_desc"),
+                    false,
+                    cx,
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(12.0))
+                        .child(
+                            div()
+                                .text_size(px(13.0))
+                                .text_color(ui::fg2(cx))
+                                .child(format!("{tm} · {pm}")),
+                        )
+                        .child(button(
+                            "toggle-custom-models",
+                            crate::i18n::t("settings.channel.customize_models"),
+                            false,
+                            move |_, cx| {
+                                toggle_view.update(cx, |v, cx| {
+                                    v.show_custom_models = true;
+                                    cx.notify();
+                                });
+                            },
+                        )),
+                ),
+            );
+        } else {
+            let toggle_view = view.clone();
+            card = card.child(
+                setting_row(
+                    crate::i18n::t("settings.channel.models_title"),
+                    crate::i18n::t("settings.channel.models_desc"),
+                    false,
+                    cx,
+                )
+                .child(button(
+                    "hide-custom-models",
+                    crate::i18n::t("settings.channel.hide_custom_models"),
+                    false,
+                    move |_, cx| {
+                        toggle_view.update(cx, |v, cx| {
+                            v.show_custom_models = false;
+                            cx.notify();
+                        });
+                    },
+                )),
+            );
+            for (is_trans, current, models, input, label, desc) in [
+                (
+                    true,
+                    tm,
+                    trans_models,
+                    self.transcribe_model_input.clone(),
+                    crate::i18n::t("settings.channel.transcribe_model"),
+                    crate::i18n::t("settings.channel.transcribe_model_desc"),
+                ),
+                (
+                    false,
+                    pm,
+                    chat_models,
+                    self.polish_model_input.clone(),
+                    crate::i18n::t("settings.channel.polish_model"),
+                    crate::i18n::t("settings.channel.polish_model_desc"),
+                ),
+            ] {
+                let save_input = input.clone();
+                let save_session = session.clone();
+                card = card.child(
                     setting_row(label, desc, true, cx).child(
                         div()
                             .flex_1()
@@ -152,20 +206,11 @@ impl SettingsView {
                             }))),
                     ),
                 );
-        }
-        let refresh = session.clone();
-        let expand_view = view.clone();
-        let test = session.clone();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(8.0))
-            .child(ui::section_label(
-                crate::i18n::t("settings.channel.section_title"),
-                None,
-            ))
-            .child(
-                card.child(
+            }
+            let refresh = session.clone();
+            let expand_view = view.clone();
+            card = card
+                .child(
                     setting_row(
                         crate::i18n::t("settings.channel.catalog"),
                         crate::i18n::t("settings.channel.catalog_desc"),
@@ -201,42 +246,54 @@ impl SettingsView {
                         .px(px(16.0))
                         .text_color(ui::fg2(cx))
                         .child(model_status),
-                )
-                .child(connection_status_row(testing, status, &session, cx))
-                .child(
-                    div()
-                        .px(px(16.0))
-                        .text_size(px(13.0))
-                        .text_color(ui::fg2(cx))
-                        .child(
-                            transcription_status
-                                .map(|(_, message)| message)
-                                .unwrap_or_else(|| {
-                                    crate::i18n::t("settings.channel.transcription_not_tested")
-                                        .to_string()
-                                }),
-                        ),
-                )
-                .child(
-                    setting_row(
-                        crate::i18n::t("settings.channel.test_transcription"),
-                        crate::i18n::t("settings.channel.test_transcription_desc"),
-                        false,
-                        cx,
+                );
+        }
+
+        let test = session.clone();
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .child(ui::section_label(
+                crate::i18n::t("settings.channel.section_title"),
+                None,
+            ))
+            .child(
+                card.child(connection_status_row(testing, status, &session, cx))
+                    .child(
+                        div()
+                            .px(px(16.0))
+                            .text_size(px(13.0))
+                            .text_color(ui::fg2(cx))
+                            .child(
+                                transcription_status
+                                    .map(|(_, message)| message)
+                                    .unwrap_or_else(|| {
+                                        crate::i18n::t("settings.channel.transcription_not_tested")
+                                            .to_string()
+                                    }),
+                            ),
                     )
-                    .child(button(
-                        "test-transcription",
-                        if testing {
-                            crate::i18n::t("settings.channel.testing")
-                        } else {
-                            crate::i18n::t("settings.channel.action_test_transcription")
-                        },
-                        false,
-                        move |_, cx| {
-                            test.update(cx, |s, cx| s.test_transcription(cx));
-                        },
-                    )),
-                ),
+                    .child(
+                        setting_row(
+                            crate::i18n::t("settings.channel.test_transcription"),
+                            crate::i18n::t("settings.channel.test_transcription_desc"),
+                            false,
+                            cx,
+                        )
+                        .child(button(
+                            "test-transcription",
+                            if testing {
+                                crate::i18n::t("settings.channel.testing")
+                            } else {
+                                crate::i18n::t("settings.channel.action_test_transcription")
+                            },
+                            false,
+                            move |_, cx| {
+                                test.update(cx, |s, cx| s.test_transcription(cx));
+                            },
+                        )),
+                    ),
             )
     }
     pub fn recovery_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {

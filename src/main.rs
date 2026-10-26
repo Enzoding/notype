@@ -23,15 +23,108 @@ mod views;
 use std::time::Duration;
 
 use gpui_kit::{
-    application, assets, init, open_window, point, px, size, ActivationPolicy, AnyWindowHandle,
-    App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowKind, WindowOptions,
+    actions, application, assets, init, open_window, point, px, size, ActivationPolicy,
+    AnyWindowHandle, App, AppContext, AssetSource, Bounds, KeyBinding, Menu, MenuItem, Result,
+    SharedString, TitlebarOptions, WindowBounds, WindowKind, WindowOptions,
 };
 use session::Session;
 use views::SettingsView;
 
+actions!(notype, [Quit, CloseWindow]);
+
+struct AppAssets {
+    icons: assets::AllAssets,
+}
+
+impl AppAssets {
+    fn new() -> Self {
+        Self {
+            icons: assets::AllAssets,
+        }
+    }
+}
+
+impl AssetSource for AppAssets {
+    fn load(&self, path: &str) -> Result<Option<std::borrow::Cow<'static, [u8]>>> {
+        if path == "logo.png" || path == "assets/logo.png" {
+            const LOGO: &[u8] = include_bytes!("../assets/logo.png");
+            return Ok(Some(std::borrow::Cow::Borrowed(LOGO)));
+        }
+        self.icons.load(path)
+    }
+
+    fn list(&self, path: &str) -> Result<Vec<SharedString>> {
+        let mut list = self.icons.list(path)?;
+        if path.is_empty() || path == "assets" {
+            list.push("logo.png".into());
+        }
+        Ok(list)
+    }
+}
+
+#[link(name = "CoreServices", kind = "framework")]
+extern "C" {
+    fn AEInstallEventHandler(
+        theAEEventClass: u32,
+        theAEEventID: u32,
+        handler: extern "C" fn(*const std::ffi::c_void, *mut std::ffi::c_void, isize) -> i32,
+        handlerRefcon: isize,
+        isSysHandler: bool,
+    ) -> i32;
+}
+
+static REOPEN_TX: std::sync::Mutex<Option<std::sync::mpsc::Sender<()>>> =
+    std::sync::Mutex::new(None);
+
+extern "C" fn reopen_apple_event_handler(
+    _event: *const std::ffi::c_void,
+    _reply: *mut std::ffi::c_void,
+    _refcon: isize,
+) -> i32 {
+    if let Ok(guard) = REOPEN_TX.lock() {
+        if let Some(tx) = guard.as_ref() {
+            let _ = tx.send(());
+        }
+    }
+    0
+}
+
+fn install_reopen_handler(tx: std::sync::mpsc::Sender<()>) {
+    if let Ok(mut guard) = REOPEN_TX.lock() {
+        *guard = Some(tx);
+    }
+    unsafe {
+        AEInstallEventHandler(
+            u32::from_be_bytes(*b"aevt"),
+            u32::from_be_bytes(*b"rapp"),
+            reopen_apple_event_handler,
+            0,
+            false,
+        );
+    }
+}
+
 fn main() {
-    application().with_assets(assets::AllAssets).run(|cx| {
+    let (reopen_tx, reopen_rx) = std::sync::mpsc::channel();
+    install_reopen_handler(reopen_tx.clone());
+
+    let r_tx = reopen_tx.clone();
+    let app = application().with_assets(AppAssets::new());
+    app.on_reopen(move |_| {
+        let _ = r_tx.send(());
+    });
+    app.run(|cx| {
         init(cx);
+
+        cx.on_action(|_: &Quit, cx| cx.quit());
+        cx.bind_keys([
+            KeyBinding::new("cmd-q", Quit, None),
+            KeyBinding::new("cmd-w", CloseWindow, None),
+        ]);
+        cx.set_menus([
+            Menu::new("Notype").items([MenuItem::action("Quit Notype", Quit)]),
+            Menu::new("Window").items([MenuItem::action("Close Window", CloseWindow)]),
+        ]);
 
         let session = cx.new(Session::new);
         let (show_dock, initial_code, initial_mode) = {
@@ -63,6 +156,7 @@ fn main() {
         cx.spawn(async move |cx| {
             let hotkeys = hotkey::listen(initial_code, initial_mode);
             let mut last_language_epoch = 0u64;
+            let mut last_active = false;
             loop {
                 cx.background_executor()
                     .timer(Duration::from_millis(25))
@@ -75,6 +169,16 @@ fn main() {
                 while let Ok(event) = tray_icon::menu::MenuEvent::receiver().try_recv() {
                     menu_ids.push(event.id.0);
                 }
+                let mut reopen_requested = false;
+                while let Ok(()) = reopen_rx.try_recv() {
+                    reopen_requested = true;
+                }
+                let active = overlay::is_app_active();
+                if active && !last_active && !overlay::is_settings_window_visible() {
+                    reopen_requested = true;
+                }
+                last_active = active;
+
                 // Check for language change and refresh tray menu labels
                 let epoch = events.read_with(cx, |s, _| s.language_epoch);
                 if epoch != last_language_epoch {
@@ -87,11 +191,14 @@ fn main() {
                     }
                 }
 
-                if hk_events.is_empty() && menu_ids.is_empty() {
+                if hk_events.is_empty() && menu_ids.is_empty() && !reopen_requested {
                     continue;
                 }
                 let events = events.clone();
                 settings = cx.update(|cx| {
+                    if reopen_requested {
+                        settings = reveal_settings(cx, events.clone(), settings);
+                    }
                     for ev in hk_events {
                         events.update(cx, |session, cx| session.handle_hotkey_event(ev, cx));
                     }
@@ -228,15 +335,20 @@ fn reveal_settings(
     session: gpui_kit::Entity<Session>,
     current: AnyWindowHandle,
 ) -> AnyWindowHandle {
-    let alive = current
-        .update(cx, |_, window, _| {
-            window.activate_window();
-        })
-        .is_ok();
-    let handle = if alive {
+    let shown = overlay::show_settings_window();
+    let handle = if shown {
         current
     } else {
-        open_settings(cx, session)
+        let alive = current
+            .update(cx, |_, window, _| {
+                window.activate_window();
+            })
+            .is_ok();
+        if alive {
+            current
+        } else {
+            open_settings(cx, session)
+        }
     };
     cx.activate(true);
     handle

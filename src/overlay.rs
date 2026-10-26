@@ -19,6 +19,39 @@ use crate::views::components::ellipsize;
 const VOICE_TITLE: &str = "Notype Voice";
 const SETTINGS_TITLE: &str = "Notype";
 
+pub fn is_settings_window_visible() -> bool {
+    let mut visible = false;
+    with_window(SETTINGS_TITLE, |window| {
+        if window.isVisible() {
+            visible = true;
+        }
+    });
+    visible
+}
+
+pub fn hide_settings_window() {
+    with_window(SETTINGS_TITLE, |window| {
+        window.orderOut(None);
+    });
+}
+
+pub fn show_settings_window() -> bool {
+    let mut shown = false;
+    with_window(SETTINGS_TITLE, |window| {
+        shown = true;
+        window.makeKeyAndOrderFront(None);
+        window.orderFrontRegardless();
+    });
+    shown
+}
+
+pub fn is_app_active() -> bool {
+    let Some(marker) = MainThreadMarker::new() else {
+        return false;
+    };
+    NSApplication::sharedApplication(marker).isActive()
+}
+
 /// Keeps the standard traffic lights but drops the duplicated title text, so
 /// the window's own header can carry the name.
 pub fn prepare_settings_window() {
@@ -117,11 +150,11 @@ fn contains_point(frame: objc2_foundation::NSRect, point: NSPoint) -> bool {
         && point.y < frame.origin.y + frame.size.height
 }
 
-fn with_voice_window(apply: impl Fn(&NSWindow)) {
+fn with_voice_window(apply: impl FnMut(&NSWindow)) {
     with_window(VOICE_TITLE, apply);
 }
 
-fn with_window(title: &str, apply: impl Fn(&NSWindow)) {
+fn with_window(title: &str, mut apply: impl FnMut(&NSWindow)) {
     let Some(marker) = MainThreadMarker::new() else {
         return;
     };

@@ -47,6 +47,7 @@ fn run(
 ) -> Result<(), String> {
     task.error.clear();
     check(cancelled)?;
+    let pipeline_start = std::time::Instant::now();
     if task.transcript.is_empty() {
         let count = task.chunk_count()?;
         if count == 0 {
@@ -55,6 +56,7 @@ fn run(
         stage(false);
         task.phase = TaskPhase::Transcribing;
         task.save()?;
+        let asr_start = std::time::Instant::now();
         for index in task.transcripts.len()..count {
             check(cancelled)?;
             if keys.transcribe.is_empty() {
@@ -76,11 +78,17 @@ fn run(
         }
         task.transcript = task.transcripts.join("\n");
         task.phase = TaskPhase::Transcribed;
+        let asr_dur = asr_start.elapsed().as_millis() as u64;
+        task.timings.asr_ms = asr_dur;
         task.save()?;
+        eprintln!("[pipeline] ASR 转写完成：{} 片，耗时 {} ms", count, asr_dur);
     }
     check(cancelled)?;
     if task.corrected.is_empty() {
-        task.corrected = mining::apply_corrections(&task.transcript, corrections);
+        let clean_start = std::time::Instant::now();
+        let cleaned = crate::polish::clean_speech(&task.transcript);
+        task.timings.clean_ms = clean_start.elapsed().as_micros() as u64;
+        task.corrected = mining::apply_corrections(&cleaned, corrections);
         task.save()?;
     }
     if let Some(options) = &task.config.options {
@@ -88,6 +96,7 @@ fn run(
             stage(true);
             task.phase = TaskPhase::Polishing;
             task.save()?;
+            let polish_start = std::time::Instant::now();
             let corrected = task.corrected.clone();
             let p = &task.config.polish;
             let segments = crate::polish::segments(&corrected);
@@ -120,9 +129,22 @@ fn run(
                 }
             }
             task.polished = task.polish_parts.join("\n\n");
+            let polish_dur = polish_start.elapsed().as_millis() as u64;
+            task.timings.polish_ms = polish_dur;
+            eprintln!(
+                "[pipeline] LLM 润色完成：{} 段，耗时 {} ms",
+                segments.len(),
+                polish_dur
+            );
         }
     }
     task.phase = TaskPhase::ReadyForDelivery;
+    let total_ms = pipeline_start.elapsed().as_millis() as u64;
+    task.timings.delivery_ms = total_ms;
+    eprintln!(
+        "[pipeline] 交付就绪（ReadyForDelivery），总耗时 {} ms (ASR: {} ms, Clean: {} µs, Polish: {} ms)",
+        total_ms, task.timings.asr_ms, task.timings.clean_ms, task.timings.polish_ms
+    );
     task.save()
 }
 
