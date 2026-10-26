@@ -17,6 +17,9 @@
 - 原生一键重启并安装更新：
   - 下载完成后支持「重启并安装」，通过安全后台更新脚本自动挂载 DMG、替换 `.app` 应用程序包并自动拉起重启。
   - 包含容错回退机制：当 `/Applications` 存在权限限制时，自动降级为在 Finder 中挂载打开 DMG 便于用户拖拽安装。
+- 零门槛安装分发方案：
+  - 新增 `scripts/install.sh` 终端一键安装脚本（自动静默下载、挂载镜像、部署到 `/Applications` 并自动解除 Gatekeeper 隔离，免除用户手动放行操作）。
+  - 新增 `Casks/notype.rb` Homebrew Cask 配置文件，支持 `brew install --cask` 统一生态管理。
 
 ### 工程治理与文档 (Engineering & Documentation)
 - `locales/en.json` 与 `locales/zh-Hans.json` 新增 15 个双语词条，覆盖版本检查、下载进度、安装重启全链路状态。
